@@ -34,8 +34,19 @@ float totalRotations = 0;
 float targetRotations = 0;
 bool running = false;
 
-// PID controller object
-PIDController pid(50.0, 0.0, 0.0); // Kp, Ki, Kd
+// PID controller object 
+// tune your Kp, Ki, and Kd so that, 
+// for the largest expected error, the output is close to 255, 
+// and for small errors, the output is much less.
+
+PIDController pid(1.7, 0.0, 0.0); // Kp, Ki, Kd
+
+//Start with Ki and Kd at 0.
+//Set Kp so that:
+//Kp * 150 ≈ 255
+//So, Kp ≈ 255 / 150 ≈ 1.7
+//Test and adjust Kp, then slowly add Ki and Kd for better performance.
+
 
 void setup() {
   Serial.begin(115200);
