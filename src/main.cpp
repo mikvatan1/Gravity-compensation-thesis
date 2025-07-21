@@ -23,7 +23,6 @@ Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
 int loadCellValue = 0;
 float voltage = 0.0;
 float force = 0.0;
-bool motorTriggered = false;  // Flag to prevent multiple motor runs
 
 // AS5600 rotary encoder
 AS5600 as5600;
