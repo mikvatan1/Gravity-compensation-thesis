@@ -5,8 +5,8 @@
 
 // WS2812B LED strip settings
 #define LED_PIN 4           // Data pin for WS2812B (connect to DIN of the strip)
-#define NUM_LEDS 50          // Start with just 50 LEDs for testing
-#define LED_BRIGHTNESS 64    // Lower brightness for testing
+#define NUM_LEDS 144          // Start with just 50 LEDs for testing
+#define LED_BRIGHTNESS 10    // 0-255 
 
 // Create NeoPixel strip object
 Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
@@ -31,43 +31,27 @@ float angle = 0.0;
 
 // Function to set all LEDs on the strip to the same color (r, g, b)
 void setStripColor(uint8_t r, uint8_t g, uint8_t b) {
+    // Clear the strip first (like in working code)
+    strip.clear();
     for (int i = 0; i < NUM_LEDS; i++) {
         strip.setPixelColor(i, strip.Color(r, g, b)); // Set LED i to the desired color
     }
     strip.show(); // Send the set colors to the strip
 }
 
-
-
-
-
-
-
-
-
 void setup() {
     Serial.begin(9600);
     Wire.begin(); // Initialize I2C
-    strip.begin(); // Start the strip
-    strip.setBrightness(LED_BRIGHTNESS); // Set brightness (for all colors)
-    strip.show(); // Clear any previous data
     
-    Serial.println("Setting LED to RED...");
-    setStripColor(255, 0, 0);        // Start with red (motor stopped)
-    delay(2000);
+    Serial.println("=== CODE VERSION 3.0 - NO FLAGS ===");
+    Serial.println("Setup starting...");
     
-    Serial.println("Testing LED colors...");
-    Serial.println("GREEN for 2 seconds...");
-    setStripColor(0, 255, 0);        // Green
-    delay(2000);
-    
-    Serial.println("BLUE for 2 seconds...");
-    setStripColor(0, 0, 255);        // Blue
-    delay(2000);
-    
-    Serial.println("Back to RED (standby)...");
-    setStripColor(255, 0, 0);        // Back to red
-    
+    // Initialize LED strip with the working sequence
+    strip.begin();
+    strip.setBrightness(LED_BRIGHTNESS);
+    strip.clear();
+    strip.show();
+
     // Initialize AS5600
     as5600.begin(4);  // 4 = number of fast I2C transmissions
     as5600.setDirection(AS5600_CLOCK_WISE); // Set rotation direction
@@ -83,8 +67,6 @@ void setup() {
     digitalWrite(R_EN, HIGH);
     digitalWrite(L_EN, HIGH);
 
-    Serial.println("Motor, Load Cell and AS5600 Test Started");
-    Serial.println("Waiting for force > 10N to start motor...");
     
     // Check if AS5600 is connected
     if (as5600.isConnected()) {
@@ -97,12 +79,8 @@ void setup() {
 void loop() {
     // Read load cell from A0
     loadCellValue = analogRead(LOAD_CELL); // raw ADC reading (0-1023)
-    
-    // Convert to voltage (0-1023 maps to 0-5V)
-    voltage = (loadCellValue * 5.0) / 1023.0; //ADC = 1023 → voltage = (1023 × 5) ÷ 1023 = 5V
-    
-    // Convert voltage directly to force using slope
-    force = voltage * 29.361; 
+    voltage = (loadCellValue * 5.0) / 1023.0; // Convert to voltage (0-1023 maps to 0-5V)
+    force = voltage * 29.361;  // Convert voltage directly to force using slope
     
     // Read AS5600 position
     currentPosition = as5600.rawAngle();  // 0-4095 (12-bit)
@@ -115,22 +93,14 @@ void loop() {
     Serial.print(voltage, 3);
     Serial.print("V | Force: ");
     Serial.print(force, 2);
-    Serial.print(" N | Position: ");
-    Serial.print(currentPosition);
-    Serial.print(" | Angle: ");
-    Serial.print(angle, 2);
-    Serial.print("° | Motor triggered: ");
-    Serial.println(motorTriggered ? "YES" : "NO");
+    Serial.println(" N");
+
     
-    // Check if force is above 10N to start motor (only once)
-    if (force > 10.0 && !motorTriggered) {
-        motorTriggered = true;  // Set flag to prevent multiple runs
-        Serial.println("Force > 10N detected! Starting motor...");
+    // Check if force is above 10N to start motor
+    if (force > 10.0) {
+     
+        setStripColor(0, 255, 0);  // Set LED strip to green (motor running)
         
-        // Set LED strip to green (motor running)
-        setStripColor(0, 255, 0);
-        
-        // Test motor sequence
         analogWrite(R_PWM, 128);  // 50% speed forward
         analogWrite(L_PWM, 0);
         delay(1000);
@@ -148,13 +118,7 @@ void loop() {
         
         // Set LED strip to red (motor stopped)
         setStripColor(255, 0, 0);
-        
-        Serial.println("Motor test completed, waiting for next trigger...");
-    }
-    
-    // Reset flag when force drops below 5N (hysteresis)
-    if (force < 5.0) {
-        motorTriggered = false;
+
     }
     
     delay(100);  // Read every 100ms
@@ -164,8 +128,9 @@ void loop() {
     if (millis() - startTime > 20000) {  // 20 seconds
         Serial.println("20 seconds elapsed - stopping measurements...");
         
-        // Turn off LED strip
-        setStripColor(0, 0, 0);  // Set all LEDs to black (off)
+        // Turn off LED strip (using clear like working code)
+        strip.clear();
+        strip.show();
         
         while(true) {
             // Infinite loop - stops everything
