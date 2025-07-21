@@ -6,7 +6,7 @@
 // WS2812B LED strip settings
 #define LED_PIN 4           // Data pin for WS2812B (connect to DIN of the strip)
 #define NUM_LEDS 144          // Start with just 50 LEDs for testing
-#define LED_BRIGHTNESS 10    // 0-255 
+#define LED_BRIGHTNESS 5    // 0-255 
 
 // Create NeoPixel strip object
 Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
@@ -95,13 +95,13 @@ void loop() {
     Serial.print(force, 2);
     Serial.println(" N");
 
-    
-    // Check if force is above 10N to start motor
-    if (force > 10.0) {
+
+    // Check if force is above 5N to start motor
+    if (force > 5) {
      
-        setStripColor(0, 255, 0);  // Set LED strip to green (motor running)
+        setStripColor(255, 0, 0);  // Set LED strip to red (motor running)
         
-        analogWrite(R_PWM, 128);  // 50% speed forward
+        analogWrite(R_PWM, 50);  // 0-256
         analogWrite(L_PWM, 0);
         delay(1000);
 
@@ -110,14 +110,14 @@ void loop() {
         delay(1000);
 
         analogWrite(R_PWM, 0);
-        analogWrite(L_PWM, 128);  // 50% speed reverse
+        analogWrite(L_PWM, 50);  // 0-256
         delay(1000);
 
         analogWrite(R_PWM, 0);
         analogWrite(L_PWM, 0);
         
-        // Set LED strip to red (motor stopped)
-        setStripColor(255, 0, 0);
+        // Set LED strip to green (motor stopped)
+        setStripColor(0, 255, 0);
 
     }
     

@@ -13,6 +13,37 @@
 			"group": "build",
 			"isBackground": false,
 			"problemMatcher": []
+		},
+		{
+			"label": "PlatformIO Upload and Monitor",
+			"type": "shell",
+			"command": "C:\\Users\\mikva\\.platformio\\penv\\Scripts\\platformio.exe",
+			"args": [
+				"run",
+				"--target",
+				"upload",
+				"--target",
+				"monitor"
+			],
+			"group": "build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "PlatformIO Monitor Only",
+			"type": "shell",
+			"command": "C:\\Users\\mikva\\.platformio\\penv\\Scripts\\platformio.exe",
+			"args": [
+				"device",
+				"monitor",
+				"--port",
+				"COM3",
+				"--baud",
+				"9600"
+			],
+			"group": "test",
+			"isBackground": false,
+			"problemMatcher": []
 		}
 	]
 }
