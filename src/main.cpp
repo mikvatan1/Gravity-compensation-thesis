@@ -19,6 +19,10 @@ Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
 
 #define LOAD_CELL A0 // force sensor pin
 
+// I2C pins (Arduino Nano default)
+#define SDA_PIN A4  // Data line
+#define SCL_PIN A5  // Clock line
+
 // Variables for load cell readings
 int loadCellValue = 0;
 float voltage = 0.0;
@@ -29,6 +33,13 @@ AS5600 as5600;
 int currentPosition = 0;
 float angle = 0.0;
 
+// Variables voor rotatie tracking
+int previousPosition = 0;
+long totalRotation = 0;
+float totalDegrees = 0.0;  // Totale rotatie in graden
+float rotationCounter = 0.0;  // Aantal volledige rotaties (met decimalen)
+bool firstReading = true;
+
 // Function to set all LEDs on the strip to the same color (r, g, b)
 void setStripColor(uint8_t r, uint8_t g, uint8_t b) {
     // Clear the strip first (like in working code)
@@ -37,6 +48,32 @@ void setStripColor(uint8_t r, uint8_t g, uint8_t b) {
         strip.setPixelColor(i, strip.Color(r, g, b)); // Set LED i to the desired color
     }
     strip.show(); // Send the set colors to the strip
+}
+
+// Function to calculate total rotation from AS5600
+void calculateRotation() {
+    if (firstReading) {
+        previousPosition = currentPosition;
+        firstReading = false;
+        return;
+    }
+    
+    int rawDifference = currentPosition - previousPosition;
+    int difference = rawDifference;
+    
+    // Handle boundary crossings
+    if (rawDifference > 2048) {
+        difference = rawDifference - 4096;  // Crossed backward through 0
+    } else if (rawDifference < -2048) {
+        difference = rawDifference + 4096;  // Crossed forward through 4095
+    }
+    
+    // Accumulate total rotation
+    totalRotation += difference;
+    totalDegrees = (totalRotation * 360.0) / 4096.0;
+    rotationCounter = (float)totalRotation / 4096.0;  // Float division for decimal places
+    
+    previousPosition = currentPosition;
 }
 
 void setup() {
@@ -85,33 +122,59 @@ void loop() {
     // Read AS5600 position
     currentPosition = as5600.rawAngle();  // 0-4095 (12-bit)
     angle = as5600.rawAngle() * (360.0/4096.0);  // Convert to degrees
+    
+    // Calculate total rotation
+    calculateRotation();
 
-    // Print readings with LED status
-    Serial.print("Raw ADC: ");
-    Serial.print(loadCellValue);
-    Serial.print(" | Voltage: ");
-    Serial.print(voltage, 3);
-    Serial.print("V | Force: ");
-    Serial.print(force, 2);
-    Serial.println(" N");
-
+    // Print readings with rotation info every 10 readings to avoid serial overflow
+    static int printCounter = 0;
+    if (printCounter % 10 == 0) {
+        Serial.print("Raw ADC: ");
+        Serial.print(loadCellValue);
+        Serial.print(" | Voltage: ");
+        Serial.print(voltage, 3);
+        Serial.print("V | Force: ");
+        Serial.print(force, 2);
+        Serial.print(" N | Angle: ");
+        Serial.print(angle, 1);
+        Serial.print("° | Total Rotation: ");
+        Serial.print(totalDegrees, 1);
+        Serial.print("° | Rotations: ");
+        Serial.println(rotationCounter, 2);  // Show 2 decimal places
+    }
+    printCounter++;
 
     // Check if force is above 5N to start motor
     if (force > 5) {
      
         setStripColor(255, 0, 0);  // Set LED strip to red (motor running)
         
+        // Motor run with fast AS5600 sampling
         analogWrite(R_PWM, 50);  // 0-256
         analogWrite(L_PWM, 0);
-        delay(1000);
+        
+        // Fast sampling during motor operation
+        unsigned long motorStartTime = millis();
+        while (millis() - motorStartTime < 1000) {
+            currentPosition = as5600.rawAngle();
+            calculateRotation();
+            delay(5);  // Very fast sampling (5ms)
+        }
 
         analogWrite(R_PWM, 0);
         analogWrite(L_PWM, 0);
         delay(1000);
 
-        analogWrite(R_PWM, 0);
-        analogWrite(L_PWM, 50);  // 0-256
-        delay(1000);
+        analogWrite(R_PWM, 50);
+        analogWrite(L_PWM, 0);  // 0-256
+        
+        // Fast sampling during second motor run
+        motorStartTime = millis();
+        while (millis() - motorStartTime < 1000) {
+            currentPosition = as5600.rawAngle();
+            calculateRotation();
+            delay(5);  // Very fast sampling (5ms)
+        }
 
         analogWrite(R_PWM, 0);
         analogWrite(L_PWM, 0);
@@ -121,7 +184,7 @@ void loop() {
 
     }
     
-    delay(100);  // Read every 100ms
+    delay(20);  // Faster reading - 20ms instead of 100ms
     
     // Stop after 20 seconds
     static unsigned long startTime = millis();
