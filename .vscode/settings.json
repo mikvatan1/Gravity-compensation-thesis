@@ -1,5 +1,6 @@
 {
     "files.associations": {
-        "real code": "cpp"
+        "real code": "cpp",
+        "test code": "cpp"
     }
 }

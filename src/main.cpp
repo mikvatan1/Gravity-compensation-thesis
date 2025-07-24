@@ -1,17 +1,21 @@
 #include <Arduino.h>
 #include <Wire.h>
-#include <AS5600.h>
+#include <math.h>
+#include <AS5600.h> 
+#include "PIDController.h"
 #include <Adafruit_NeoPixel.h>
 
-// WS2812B LED strip settings
-#define LED_PIN 4           // Data pin for WS2812B (connect to DIN of the strip)
-#define NUM_LEDS 144          // Start with just 50 LEDs for testing
-#define LED_BRIGHTNESS 5    // 0-255 
+#define AS5600_RAW_TO_DEGREES (360.0 / 4096.0)
 
-// Create NeoPixel strip object
-Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
+float k_spring = 1.97; // [N/mm]
+float num_springs = 2; // Number of springs used
+float spoed = 2.0; // [mm] per rotation
+float a_start = 100; // [mm] Manually set start value of a, corresponds to the actual start position of the device
+float a_target = 0; // [mm] Starting value of a
 
-// Motor driver pins
+AS5600 as5600; // Create an instance of the AS5600 class to interact with the sensor
+
+// Motor driver pins (correct from main.cpp)
 #define R_PWM 5 // D5
 #define L_PWM 3 // D3
 #define R_EN 8 // D8
@@ -19,38 +23,47 @@ Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
 
 #define LOAD_CELL A0 // force sensor pin
 
-// I2C pins (Arduino Nano default)
-#define SDA_PIN A4  // Data line
-#define SCL_PIN A5  // Clock line
+// Motor direction
+bool motorForward = true; // true = forward, false = backward, goes automatically
 
-// Variables for load cell readings
-int loadCellValue = 0;
-float voltage = 0.0;
-float force = 0.0;
-
-// AS5600 rotary encoder
-AS5600 as5600;
+// Encoder variables 
 int currentPosition = 0;
-float angle = 0.0;
-
-// Variables voor rotatie tracking
 int previousPosition = 0;
 long totalRotation = 0;
-float totalDegrees = 0.0;  // Totale rotatie in graden
-float rotationCounter = 0.0;  // Aantal volledige rotaties (met decimalen)
+float totalDegrees = 0.0;
+float rotationCounter = 0.0;
 bool firstReading = true;
 
-// Function to set all LEDs on the strip to the same color (r, g, b)
-void setStripColor(uint8_t r, uint8_t g, uint8_t b) {
-    // Clear the strip first (like in working code)
-    strip.clear();
-    for (int i = 0; i < NUM_LEDS; i++) {
-        strip.setPixelColor(i, strip.Color(r, g, b)); // Set LED i to the desired color
-    }
-    strip.show(); // Send the set colors to the strip
-}
+// Closed-loop control variables
+float targetRotations = 0;
+bool running = false;
+unsigned long motorStartTime = 0; // Track when motor started for timeout
+bool timeoutOccurred = false; // Prevent immediate restart after timeout
+unsigned long timeoutLightTime = 0; // Track when yellow light started
+bool yellowLightActive = false; // Track if yellow light is currently on
 
-// Function to calculate total rotation from AS5600
+// PID controller object 
+// tune your Kp, Ki, and Kd so that, 
+// for the largest expected error, the output is close to 255, 
+// and for small errors, the output is much less.
+
+PIDController pid(1.7, 0.0, 0.0); // Kp, Ki, Kd
+
+//Start with Ki and Kd at 0.
+//Set Kp so that:
+//Kp * 150 ≈ 255
+//So, Kp ≈ 255 / 150 ≈ 1.7
+//Test and adjust Kp, then slowly add Ki and Kd for better performance.
+
+// Instellingen voor de WS2812B LED-strip (correct from main.cpp)
+#define LED_PIN 4           // Data pin for WS2812B (connect to DIN of the strip)
+#define NUM_LEDS 144        // Number of LEDs on the strip (adjust to your strip)
+#define LED_BRIGHTNESS 5    // Brightness of the strip (correct from main.cpp)
+
+// Create a NeoPixel strip object
+Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
+
+// Function to calculate total rotation from AS5600 - exact same as test code
 void calculateRotation() {
     if (firstReading) {
         previousPosition = currentPosition;
@@ -76,131 +89,183 @@ void calculateRotation() {
     previousPosition = currentPosition;
 }
 
+
+
+
 void setup() {
-    Serial.begin(9600);
-    Wire.begin(); // Initialize I2C
-    
-    Serial.println("=== CODE VERSION 3.0 - NO FLAGS ===");
-    Serial.println("Setup starting...");
-    
-    // Initialize LED strip with the working sequence
-    strip.begin();
-    strip.setBrightness(LED_BRIGHTNESS);
-    strip.clear();
-    strip.show();
+  Serial.begin(9600); // Baud rate 9600
+  Wire.begin(); // Initialize I2C
 
-    // Initialize AS5600
-    as5600.begin(4);  // 4 = number of fast I2C transmissions
-    as5600.setDirection(AS5600_CLOCK_WISE); // Set rotation direction
-    
-    // Configureer alle motor pinnen als output
-    pinMode(R_PWM, OUTPUT);
-    pinMode(L_PWM, OUTPUT);
-    pinMode(R_EN, OUTPUT);
-    pinMode(L_EN, OUTPUT);
+  as5600.begin(4);  // 4 = number of fast I2C transmissions
+  as5600.setDirection(AS5600_CLOCK_WISE); // Set rotation direction
+  
+  // Check if AS5600 is connected
+  if (as5600.isConnected()) {
+    Serial.println("AS5600 rotary encoder connected successfully!");
+  } else {
+    Serial.println("AS5600 not found - check I2C connections");
+  }
 
-    // Analog pins are input by default, no pinMode needed
-    
-    digitalWrite(R_EN, HIGH);
-    digitalWrite(L_EN, HIGH);
+  // Motor driver pins as output (correct pins from main.cpp)
+  pinMode(R_PWM, OUTPUT);
+  pinMode(L_PWM, OUTPUT);
+  pinMode(R_EN, OUTPUT);
+  pinMode(L_EN, OUTPUT);
+  
+  // Enable motor driver
+  digitalWrite(R_EN, HIGH);
+  digitalWrite(L_EN, HIGH);
 
-    
-    // Check if AS5600 is connected
-    if (as5600.isConnected()) {
-        Serial.println("AS5600 rotary encoder connected successfully!");
-    } else {
-        Serial.println("AS5600 not found - check I2C connections");
-    }
+  // Led strip initialization
+  strip.begin();
+  strip.setBrightness(LED_BRIGHTNESS); // Set brightness
+  strip.show(); // Turn off all LEDs at startup
+}
+
+// Set all LEDs on the strip to the same color (r, g, b)
+void setStripColor(uint8_t r, uint8_t g, uint8_t b) {
+  strip.clear(); // Clear the strip first (like in main.cpp)
+  for (int i = 0; i < NUM_LEDS; i++) {
+    strip.setPixelColor(i, strip.Color(r, g, b)); // Set LED i to the desired color
+  }
+  strip.show(); // Send the set colors to the strip
 }
 
 void loop() {
-    // Read load cell from A0
-    loadCellValue = analogRead(LOAD_CELL); // raw ADC reading (0-1023)
-    voltage = (loadCellValue * 5.0) / 1023.0; // Convert to voltage (0-1023 maps to 0-5V)
-    force = voltage * 29.361;  // Convert voltage directly to force using slope
-    
-    // Read AS5600 position
-    currentPosition = as5600.rawAngle();  // 0-4095 (12-bit)
-    angle = as5600.rawAngle() * (360.0/4096.0);  // Convert to degrees
-    
-    // Calculate total rotation
-    calculateRotation();
 
-    // Print readings with rotation info every 10 readings to avoid serial overflow
-    static int printCounter = 0;
-    if (printCounter % 10 == 0) {
-        Serial.print("Raw ADC: ");
-        Serial.print(loadCellValue);
-        Serial.print(" | Voltage: ");
-        Serial.print(voltage, 3);
-        Serial.print("V | Force: ");
-        Serial.print(force, 2);
-        Serial.print(" N | Angle: ");
-        Serial.print(angle, 1);
-        Serial.print("° | Total Rotation: ");
-        Serial.print(totalDegrees, 1);
-        Serial.print("° | Rotations: ");
-        Serial.println(rotationCounter, 2);  // Show 2 decimal places
+  // Read force sensor
+  int rawADC = analogRead(LOAD_CELL);
+  float voltage = (rawADC * 5.0) / 1023.0; // Convert to voltage
+  float force = voltage * 29.361;  // Convert voltage directly to force (N) using slope
+  float totalForce = force * 6; // Total force at the middle of stage 1 of the scissor lift
+
+  // If motor is not running
+  if (!running) { 
+    a_target = totalForce/(k_spring*num_springs); // a(mm), k(N/mm), F = a*k
+    float delta_a = a_target - a_start;
+    
+    // Don't restart immediately after timeout - require force to change significantly
+    if (timeoutOccurred) {
+      
+      // Turn off yellow light after 2 seconds - only once
+      if (yellowLightActive && millis() - timeoutLightTime > 2000) {
+        setStripColor(0, 255, 0); // Back to green after 2 seconds
+        yellowLightActive = false; // Mark yellow light as turned off
+      }
+      
+      if (fabs(delta_a) < 1) { // Reset timeout flag when force is low
+        timeoutOccurred = false;
+        yellowLightActive = false; // Reset yellow light flag too
+      }
+      return; // Skip motor start logic during cooldown
     }
-    printCounter++;
+    
+    if (fabs(delta_a) > 5) {  // Only adjust if a_delta is bigger than 5 mm
+      targetRotations = delta_a / spoed;
+      totalRotation = 0;
+      rotationCounter = 0.0;
+      currentPosition = as5600.rawAngle();
+      previousPosition = currentPosition;
+      firstReading = true;
+      motorForward = (delta_a >= 0); // True/false , later used for rotation direction
+      running = true; // Motor starts rotating
+      motorStartTime = millis(); // Record start time for timeout
+    } else {
+      running = false; // delta_a is too small, motor off
+    }
+  }
 
-    // Check if force is above 5N to start motor
-    if (force > 5) {
-     
-        setStripColor(255, 0, 0);  // Set LED strip to red (motor running)
-        
-        // Motor run with fast AS5600 sampling
-        analogWrite(R_PWM, 50);  // 0-256
+
+  // If motor is running, adjust with PID
+  if (running) {
+    // Check for 5-second timeout
+    if (millis() - motorStartTime > 5000) {
+      // Serial.println(" | TIMEOUT: 5 seconds elapsed - stopping motor for safety!");
+      analogWrite(R_PWM, 0);
+      analogWrite(L_PWM, 0);
+      running = false;
+      pid.reset();
+      timeoutOccurred = true; // Set timeout flag to prevent immediate restart
+      timeoutLightTime = millis(); // Record when yellow light started
+      yellowLightActive = true; // Mark that yellow light is now active
+      setStripColor(255, 255, 0); // Yellow = timeout warning
+      
+      // Stop program after timeout
+      while(true) {
+        delay(1000); // Infinite loop - stops program
+      }
+    }
+    
+    setStripColor(255, 0, 0); // Led strip: red
+    float output = pid.compute(targetRotations, rotationCounter); // PID calculation using rotationCounter from test code
+    int pwm = constrain(abs(output), 50, 255); // Minimum PWM of 50 like in test code
+    
+    // DEBUG: Print PID values
+    // Serial.print(" | PID output: "); Serial.print(output, 2);
+    // Serial.print(" | PWM: "); Serial.print(pwm);
+    // Serial.print(" | abs(totalRot): "); Serial.print(fabs(totalRotations), 3);
+    // Serial.print(" | abs(targetRot): "); Serial.print(fabs(targetRotations), 3);
+    // Serial.print(" | Runtime: "); Serial.print((millis() - motorStartTime) / 1000.0, 1); Serial.print("s");
+    
+    if (fabs(rotationCounter) < fabs(targetRotations)) {
+      // Serial.print(" | Status: MOVING");
+      if (motorForward) { // Motor moves forward
+        analogWrite(R_PWM, pwm); // Use correct pin names from main.cpp
         analogWrite(L_PWM, 0);
-        
-        // Fast sampling during motor operation
-        unsigned long motorStartTime = millis();
-        while (millis() - motorStartTime < 1000) {
-            currentPosition = as5600.rawAngle();
-            calculateRotation();
-            delay(5);  // Very fast sampling (5ms)
-        }
-
+      } else { // Motor moves backward
         analogWrite(R_PWM, 0);
-        analogWrite(L_PWM, 0);
-        delay(1000);
-
-        analogWrite(R_PWM, 50);
-        analogWrite(L_PWM, 0);  // 0-256
-        
-        // Fast sampling during second motor run
-        motorStartTime = millis();
-        while (millis() - motorStartTime < 1000) {
-            currentPosition = as5600.rawAngle();
-            calculateRotation();
-            delay(5);  // Very fast sampling (5ms)
-        }
-
-        analogWrite(R_PWM, 0);
-        analogWrite(L_PWM, 0);
-        
-        // Set LED strip to green (motor stopped)
-        setStripColor(0, 255, 0);
-
+        analogWrite(L_PWM, pwm);
+      }
+    } else { // Target reached, stop the motor
+      analogWrite(R_PWM, 0);
+      analogWrite(L_PWM, 0);
+      running = false;
+      pid.reset();
+      timeoutOccurred = false; // Clear timeout flag on successful completion
+      
+      // Stop program after successful completion
+      while(true) {
+        delay(1000); // Infinite loop - stops program
+      }
     }
     
-    delay(20);  // Faster reading - 20ms instead of 100ms
-    
-    // Stop after 20 seconds
-    static unsigned long startTime = millis();
-    if (millis() - startTime > 20000) {  // 20 seconds
-        Serial.println("20 seconds elapsed - stopping measurements...");
-        
-        // Turn off LED strip (using clear like working code)
-        strip.clear();
-        strip.show();
-        
-        while(true) {
-            // Infinite loop - stops everything
-            delay(1000);
-        }
+    // Fast sampling when motor is running - like in your working test code
+    delay(5);  // 5ms delay for fast encoder reading during motor operation
+  } else { // Motor off when not running
+    // Only set green if not in timeout cooldown
+    if (!timeoutOccurred) {
+      setStripColor(0, 255, 0); // Led strip: green
     }
+    analogWrite(R_PWM, 0);
+    analogWrite(L_PWM, 0);
+    
+    // Use same fast sampling even when motor is off for consistent encoder reading
+    delay(5);  // Same 5ms delay as when running
+  }
+
+
+  // Rotary encoder reading - read every loop like in test code
+  currentPosition = as5600.rawAngle();  // 0-4095 (12-bit)
+  calculateRotation();
+
+  // After reaching the goal, update a_start
+  if (!running) {
+    a_start = a_target;
+  }
+
+  // Serial output - DEBUG: Print all values to see what's happening
+  // Serial.print("Raw ADC: "); Serial.print(rawADC);
+  // Serial.print(" | Voltage: "); Serial.print(voltage, 3); Serial.print("V");
+  Serial.print(" | Force: "); Serial.print(force, 2); Serial.print("N");
+  // Serial.print(" | Total Force: "); Serial.print(totalForce, 2); Serial.print("N");
+  // Serial.print(" | a_target: "); Serial.print(a_target, 2); Serial.print("mm");
+  // Serial.print(" | delta_a: "); Serial.print(a_target - a_start, 2); Serial.print("mm");
+  // Serial.print(" | Running: "); Serial.print(running ? "YES" : "NO");
+  // Serial.print(" | Target rot: "); Serial.print(targetRotations, 2);
+  Serial.print(" | Rotations: "); Serial.print(rotationCounter, 2);
+  // Serial.print(" | Angle: "); Serial.print(angle, 2); Serial.println("°");
+
+  // Remove the delay from here since it's now handled in the motor control section
 }
-
 
 

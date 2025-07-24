@@ -27,7 +27,7 @@ float PIDController::compute(float setpoint, float measured) {
     float error = setpoint - measured; // Calculate error
     integral += error;                 // Accumulate the integral term
     float derivative = error - lastError; // Calculate the derivative term
-    float output = Kp * error + Ki * integral + Kd * derivative; // PID formula
+    float output = (Kp * error) + (Ki * integral) + (Kd * derivative); // PID formula
     lastError = error;                 // Store error for next derivative calculation
     return output;                     // Return the control output
 }
