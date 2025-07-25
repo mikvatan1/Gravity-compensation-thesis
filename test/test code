@@ -12,7 +12,7 @@ float a_target = 0; // (Startwaarde) Doelwaarde van a in mm, berekend uit kracht
 // WS2812B LED strip settings
 #define LED_PIN 4           // Data pin for WS2812B (connect to DIN of the strip)
 #define NUM_LEDS 144          // Start with just 50 LEDs for testing
-#define LED_BRIGHTNESS 5    // 0-255 
+#define LED_BRIGHTNESS 5    // 0-255
 
 // Create NeoPixel strip object
 Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);

@@ -19,13 +19,14 @@ def main():
         ser = serial.Serial(port, 9600, timeout=1)
         print(f"Connected to {port}")
         time.sleep(2)
-    except:
-        print(f"Failed to connect to {port}")
+    except Exception as e:
+        print(f"Failed to connect to {port}: {e}")
+        print("Try unplugging and reconnecting Arduino, or check if another program is using the port")
         return
     
     # PID parameters (from your Arduino code)
-    kp = 1.7
-    ki = 0.0  # Currently 0
+    kp = 2.3  # Updated for 15kg max force
+    ki = 0.1  # Updated to match Arduino
     kd = 0.0  # Currently 0
     
     # Data storage
@@ -51,31 +52,35 @@ def main():
             if ser.in_waiting:
                 line = ser.readline().decode('utf-8').strip()
                 
+                # Debug: Print what we're receiving
+                if line:
+                    print(f"Received: {line}")
+                
                 # Look for Target rot and Rotations in the output
-                target_match = re.search(r'Target rot:\s*([-\d.]+)', line)
-                actual_match = re.search(r'Rotations:\s*([-\d.]+)', line)
+                target_match = re.search(r'Target rot:\s*([-\d.]+)', line)  # ← SEARCHES for "Target rot: X.XX" pattern
+                actual_match = re.search(r'Rotations:\s*([-\d.]+)', line)   # ← SEARCHES for "Rotations: X.XX" pattern
                 
                 if target_match and actual_match:
                     # Calculate error
-                    target = float(target_match.group(1))
-                    actual = float(actual_match.group(1))
+                    target = float(target_match.group(1))  # ← EXTRACTS: targetRotations value from Arduino (force → target position)
+                    actual = float(actual_match.group(1))  # ← EXTRACTS: rotationCounter value from Arduino (AS5600 encoder position)
                     error = target - actual
                     
                     current_time = time.time() - start_time
                     dt = current_time - last_time if last_time > 0 else 0.02
                     
                     # Calculate PID terms
-                    p_term = kp * error
+                    p_term = kp * error                   # P: Proportional to current error (immediate response)
                     
                     if dt > 0:
-                        integral += error * dt
-                    i_term = ki * integral
+                        integral += error * dt            # Accumulate error over time for I term
+                    i_term = ki * integral                # I: Integral of accumulated error (eliminates steady-state error)
                     
                     if dt > 0 and last_error is not None:
-                        derivative = (error - last_error) / dt
+                        derivative = (error - last_error) / dt  # Rate of change of error
                     else:
                         derivative = 0
-                    d_term = kd * derivative
+                    d_term = kd * derivative              # D: Derivative of error (reduces overshoot)
                     
                     # Store data
                     times.append(current_time)
@@ -92,12 +97,21 @@ def main():
                     last_time = current_time
                     
         except KeyboardInterrupt:
+            print("\nStopped by user")
             break
-        except:
+        except Exception as e:
+            # Silently continue on errors
             continue
     
-    ser.close()
+    # Always close serial port
+    try:
+        ser.close()
+        print("Serial port closed")
+    except:
+        pass
     
+
+
     # Create the simple graph
     if len(times) > 5:
         plt.figure(figsize=(10, 6))
@@ -118,7 +132,16 @@ def main():
         print(f"\nGraph saved as 'pid_terms.png'")
         print(f"Collected {len(times)} data points")
         
-        plt.show()
+        # Use non-blocking show to prevent freezing
+        plt.show(block=False)
+        plt.pause(1)  # Keep window open briefly
+        
+        # Ask user if they want to keep the plot open
+        try:
+            input("Press Enter to close the plot and exit...")
+        except:
+            pass
+        plt.close('all')  # Close all matplotlib windows
     else:
         print("Not enough data collected. Make sure Arduino is sending data.")
 

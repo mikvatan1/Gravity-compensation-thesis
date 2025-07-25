@@ -38,18 +38,26 @@ bool running = false;
 
 
 
-// PID controller object 
-// tune your Kp, Ki, and Kd so that, 
-// for the largest expected error, the output is close to 255, 
-// and for small errors, the output is much less.
+PIDController pid(2.3, 0.1, 0.0); // Kp, Ki, Kd - Optimized for 15kg max force
 
-PIDController pid(1.7, 0.0, 0.0); // Kp, Ki, Kd
+// P-term: (Should spike immediately with force and drop when no force is applied)
+// Max force: 15kg = 150 N
+// Max totalForce: 150 * 6 = 900 N
+// Max a_target: 900/(1.97*2) = 227.4 mm
+// Max targetRotations: 227.4/2.0 = 113.7 rotations
+// Optimal Kp: 255/113.7 ≈ 2.2
+// For your maximum expected ERROR, the PID output should be around 255 (max speed):
 
-//Start with Ki and Kd at 0.
-//Set Kp so that:
-//Kp * 150 ≈ 255
-//So, Kp ≈ 255 / 150 ≈ 1.7
-//Test and adjust Kp, then slowly add Ki and Kd for better performance.
+// I-term: (Should gradually build up during sustained error and flatten out when target is reached)
+// Too low: System never quite reaches exact target (steady-state error remains)
+// Too high: System becomes unstable, oscillates, or overshoots
+// Good range to try: 0.05, 0.1, 0.2, 0.5
+
+// D-term: (Should remain flat because the error difference is very small, and change when sudden spikes happen)
+// Too low: System overshoots target, oscillates
+// Too high: System becomes sluggish, amplifies noise
+// Good starting values: 0.01, 0.05, 0.1
+
 
 // Instellingen voor de WS2812B LED-strip (correct from main.cpp)
 #define LED_PIN 4           // Data pin for WS2812B (connect to DIN of the strip)
@@ -135,7 +143,7 @@ void loop() {
   float totalForce = force * 6; // Total force at the middle of stage 1 of the scissor lift
   
   // calculate target a and delta_a
-  float a_target = totalForce/(k_spring*num_springs); // a(mm), k(N/mm), F = a*k
+  a_target = totalForce/(k_spring*num_springs); // a(mm), k(N/mm), F = a*k
   float delta_a = a_target - a_start; 
   
   // Calculate target rotations from delta_a
@@ -167,53 +175,56 @@ void loop() {
   printCounter++;
     
 
-  // If motor is running, adjust with PID
-  if (fabs(delta_a) > 5) {    // Only adjust if a_delta is bigger than 5 mm
-    float output = pid.compute(targetRotations, rotationCounter); // PID calculation using rotationCounter from test code
+  // Motor control based on rotation error only
+  float rotationError = targetRotations - rotationCounter;
+  
+  if (fabs(rotationError) > 1) {    // Only adjust if rotation error > 1
+    float output = pid.compute(targetRotations, rotationCounter); // PID calculation using rotationCounter
     int pwm = constrain(abs(output), 50, 255); // Minimum PWM of 50 for motor operation
 
     setStripColor(255, 0, 0); // Led strip: red
+    running = true;
 
-    if (delta_a > 0) { // Need to extend (positive delta_a means forward)
+    if (rotationError > 1) { // Need more rotations (extend)
       analogWrite(R_PWM, pwm); 
       analogWrite(L_PWM, 0);
-
-      // Fast sampling during motor operation
-      unsigned long motorStartTime = millis();
-      while (millis() - motorStartTime < 1000) {
-        currentPosition = as5600.rawAngle();
-        calculateRotation();
-        delay(5);  // Very fast sampling (5ms)
-      }
-
-    } else { // Need to retract (negative delta_a means backward)
+    } else if (rotationError < -1) { // Need fewer rotations (retract to correct overshoot)
       analogWrite(R_PWM, 0);
       analogWrite(L_PWM, pwm);
-
-      // Fast sampling during motor operation
-      unsigned long motorStartTime = millis();
-      while (millis() - motorStartTime < 1000) {
-        currentPosition = as5600.rawAngle();
-        calculateRotation();
-        delay(5);  // Very fast sampling (5ms)
-      }
     }
 
   } else { // Target reached, stop the motor
     setStripColor(0, 255, 0); // Led strip: green
     analogWrite(R_PWM, 0);
     analogWrite(L_PWM, 0);
-    running = false;
-    pid.reset();
-    a_start = a_target;
+    if (running) {  // Only reset PID when transitioning from running to stopped
+      pid.reset();
+      a_start = a_target;  // Update start position when target is reached
+      // Reset rotation counter to match new reference point
+      totalRotation = 0;
+      rotationCounter = 0.0;
+      totalDegrees = 0.0;
+      running = false;
+    }
   }
 
-  delay(20);  // Faster reading - 20ms instead of 100ms
+  // Faster sampling when motor is active
+  if (running) {
+    delay(10);  // Fast updates when controlling motor
+  } else {
+    delay(20);  // Normal rate when idle
+  }
   
   // Stop after 20 seconds
   static unsigned long startTime = millis();
   if (millis() - startTime > 20000) {  // 20 seconds
     Serial.println("20 seconds elapsed - stopping measurements...");
+    
+    // STOP MOTOR FIRST!
+    analogWrite(R_PWM, 0);
+    analogWrite(L_PWM, 0);
+    digitalWrite(R_EN, LOW);
+    digitalWrite(L_EN, LOW);
     
     // Turn off LED strip (using clear like working code)
     strip.clear();
