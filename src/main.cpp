@@ -213,6 +213,8 @@ void loop() {
     firstReading = true; // Reset first reading
   }
 
+
+
 delay(5);
 
 Serial.print("Force: ");
@@ -225,10 +227,16 @@ Serial.print(" | delta_a: ");
 Serial.print(delta_a, 2);
 Serial.print(" | totalAbsRotation: ");
 Serial.print(totalAbsRotation, 2);
+
+// Print for Python PID graph script
+Serial.print("Target rot: ");
+Serial.print(targetRotations, 2);
+Serial.print(" | Rotations: ");
+Serial.println(rotationCounter, 2);
 Serial.print(" | rotationError: ");
 Serial.print(rotationError, 2);
-Serial.print(" | rotationCounter: ");
-Serial.println(rotationCounter, 4);
+Serial.println();
+
 
 
 }
