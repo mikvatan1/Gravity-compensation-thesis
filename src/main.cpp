@@ -28,8 +28,8 @@ float angle = 0.0;
 // Variables for rotation tracking
 int previousPosition = 0;
 long totalRotation = 0;
-float totalDegrees = 0.0;  // Totale rotatie in graden
 float rotationCounter = 0.0;  // Aantal volledige rotaties (met decimalen)
+float totalAbsRotation = 0.0; // Sum of absolute steps, always increasing
 bool firstReading = true;
 
 // Closed-loop control variables
@@ -79,37 +79,31 @@ void setStripColor(uint8_t r, uint8_t g, uint8_t b) {
 
 
 // Function to calculate total rotation from AS5600
-void calculateRotation() {
-    if (firstReading) {
-        previousPosition = currentPosition;
-        firstReading = false;
-        return;
-    }
-    
-    int rawDifference = currentPosition - previousPosition;
-    int difference = rawDifference;
-    
-    // Handle boundary crossings
-    if (rawDifference > 2048) {
-        difference = rawDifference - 4096;  // Crossed backward through 0
-    } else if (rawDifference < -2048) {
-        difference = rawDifference + 4096;  // Crossed forward through 4095
-    }
-    
-    // Accumulate total rotation
-    totalRotation += difference;
-    totalDegrees = (totalRotation * 360.0) / 4096.0;
-    rotationCounter = (float)totalRotation / 4096.0;  // Float division for decimal places
-    
-    previousPosition = currentPosition;
-}
+// void calculateRotation() {
+//   if (firstReading) {
+//        previousPosition = currentPosition;
+//        firstReading = false;
+//        return;
+//   }
+//    
+//    // Robust calculation: always take the smallest difference, even with multiple turns per sample
+//    int diff = (currentPosition - previousPosition + 4096) % 4096;
+//    if (diff > 2048) diff -= 4096;
+//    totalRotation += diff;
+//    totalAbsRotation += fabs(diff) / 4096.0; // Add absolute value in rotations
+//    totalDegrees = (totalRotation * 360.0) / 4096.0;
+//    rotationCounter = (float)totalRotation / 4096.0;  // Float division for decimal places
+//    previousPosition = currentPosition;
+//}
+
+unsigned long startMillis = 0;
 
 void setup() {
   Serial.begin(9600); // Baud rate 9600
   Wire.begin(); // Initialize I2C
 
   as5600.begin(4);  // 4 = number of fast I2C transmissions
-  as5600.setDirection(AS5600_CLOCK_WISE); // Set rotation direction
+  as5600.setDirection(AS5600_CLOCK_WISE); // Set rotation direction (now matches physical direction)
   
   // Check if AS5600 is connected
   if (as5600.isConnected()) {
@@ -132,128 +126,112 @@ void setup() {
   strip.begin();
   strip.setBrightness(LED_BRIGHTNESS); // Set brightness
   strip.show(); // Turn off all LEDs at startup
+  startMillis = millis(); // Record start time
 }
 
 
 void loop() {
-  // Read force sensor
-  int rawADC = analogRead(LOAD_CELL);
-  float voltage = (rawADC * 5.0) / 1023.0; // Convert to voltage
-  float force = voltage * 29.361;  // Convert voltage directly to force (N) using slope
-  float totalForce = force * 6; // Total force at the middle of stage 1 of the scissor lift
-  
-  // calculate target a and delta_a
-  a_target = totalForce/(k_spring*num_springs); // a(mm), k(N/mm), F = a*k
-  float delta_a = a_target - a_start; 
-  
-  // Calculate target rotations from delta_a
-  targetRotations = delta_a / spoed; // Convert mm to rotations
 
-  // Read AS5600 position
-  currentPosition = as5600.rawAngle();  // 0-4095 (12-bit)
-  angle = currentPosition * (360.0/4096.0);  // Convert to degrees using already read value
-
-  // Calculate total rotation
-  calculateRotation();
-
-  // Print readings with rotation info every 10 readings to avoid serial overflow
-  static int printCounter = 0;
-  if (printCounter % 10 == 0) {
-    Serial.print("Raw ADC: ");
-    Serial.print(rawADC);
-    Serial.print(" | Voltage: ");
-    Serial.print(voltage, 3);
-    Serial.print("V | Force: ");
-    Serial.print(force, 2);
-    Serial.print(" N | Angle: ");
-    Serial.print(angle, 1);
-    Serial.print("° | Total Rotation: ");
-    Serial.print(totalDegrees, 1);
-    Serial.print("° | Rotations: ");
-    Serial.println(rotationCounter, 2);  // Show 2 decimal places
-  }
-  printCounter++;
-    
-
-  // Motor control based on rotation error only
-  float rotationError = targetRotations - rotationCounter;
-  
-  if (fabs(rotationError) > 1) {    // Only adjust if rotation error > 1
-    float output = pid.compute(targetRotations, rotationCounter); // PID calculation using rotationCounter
-    int pwm = constrain(abs(output), 50, 255); // Minimum PWM of 50 for motor operation
-
-    setStripColor(255, 0, 0); // Led strip: red
-    running = true;
-
-    if (rotationError > 1) { // Need more rotations (extend)
-      analogWrite(R_PWM, pwm); 
-      analogWrite(L_PWM, 0);
-    } else if (rotationError < -1) { // Need fewer rotations (retract to correct overshoot)
-      analogWrite(R_PWM, 0);
-      analogWrite(L_PWM, pwm);
-    }
-
-  } else { // Target reached, stop the motor
-    setStripColor(0, 255, 0); // Led strip: green
-    analogWrite(R_PWM, 0);
-    analogWrite(L_PWM, 0);
-    if (running) {  // Only reset PID when transitioning from running to stopped
-      pid.reset();
-      a_start = a_target;  // Update start position when target is reached
-      // Reset rotation counter to match new reference point
-      totalRotation = 0;
-      rotationCounter = 0.0;
-      totalDegrees = 0.0;
-      running = false;
-    }
-  }
-
-  // Faster sampling when motor is active
-  if (running) {
-    delay(10);  // Fast updates when controlling motor
-  } else {
-    delay(20);  // Normal rate when idle
-  }
-  
   // Stop after 20 seconds
-  static unsigned long startTime = millis();
-  if (millis() - startTime > 20000) {  // 20 seconds
-    Serial.println("20 seconds elapsed - stopping measurements...");
-    
-    // STOP MOTOR FIRST!
+  if (millis() - startMillis > 20000) {
+    setStripColor(255, 255, 0); // Optional: set LED yellow to indicate stop
     analogWrite(R_PWM, 0);
     analogWrite(L_PWM, 0);
     digitalWrite(R_EN, LOW);
     digitalWrite(L_EN, LOW);
-    
-    // Turn off LED strip (using clear like working code)
-    strip.clear();
-    strip.show();
-    
-    while(true) {
-      // Infinite loop - stops everything
-      delay(1000);
+    while (true) {
+      // Halt execution
     }
   }
 
-  // Serial output - DEBUG: Print all values to see what's happening
-  // Serial.print("Raw ADC: "); Serial.print(rawADC);
-  // Serial.print(" | Voltage: "); Serial.print(voltage, 3); Serial.print("V");
-  Serial.print(" | Force: "); Serial.print(force, 2); Serial.print("N");
-  // Serial.print(" | Total Force: "); Serial.print(totalForce, 2); Serial.print("N");
-  Serial.print(" | a_target: "); Serial.print(a_target, 2); Serial.print("mm");
-  Serial.print(" | delta_a: "); Serial.print(delta_a, 2); Serial.print("mm");
-  // Serial.print(" | Running: "); Serial.print(running ? "YES" : "NO");
-  Serial.print(" | Target rot: "); Serial.print(targetRotations, 2);
-  Serial.print(" | Rotations: "); Serial.print(rotationCounter, 2);
-  Serial.println(); // Add newline for readable output
+  currentPosition = as5600.rawAngle();  // 0-4095 (12-bit)
+
+
+  if (firstReading) {
+    previousPosition = currentPosition;
+    firstReading = false;
+  } else {
+    int diff = (currentPosition - previousPosition + 4096) % 4096;
+    if (diff > 2048) diff -= 4096;
+    totalRotation += diff;
+    totalAbsRotation += fabs(diff) / 4096.0; 
+    rotationCounter = (float)totalRotation / 4096.0;
+    previousPosition = currentPosition;
+  }
+
+  
+  
+  // Read the force sensor (Load Cell)
+  int rawADC = analogRead(LOAD_CELL);
+  float voltage = (rawADC * 5.0) / 1023.0; // Convert to voltage
+  float force = voltage * 29.361;  // force (N) 
+  float totalForce = force * 6; // Total force 
+  
+  float a_target = totalForce/(k_spring*num_springs); // a(mm), k(N/mm), F = a*k
+  float a_actual = a_start + (rotationCounter * spoed); // Actual position of a
+  float delta_a = a_target - a_actual;
+
+  targetRotations = delta_a / spoed; // Convert mm to rotations
+
+  float rotationError = targetRotations - rotationCounter;
+
+  if (fabs(rotationError) > 2) {   // Absolute value of 1
+    // Enable motor driver so it can move
+    digitalWrite(R_EN, HIGH);
+    digitalWrite(L_EN, HIGH);
+
+    float output = pid.compute(targetRotations, rotationCounter); // PID calculation 
+    int pwm = constrain(abs(output), 50, 255); // PWM constraints
+
+    setStripColor(255, 0, 0); // Led strip: red
+
+    if (rotationError > 2) { // Need more rotations (extend)
+      analogWrite(R_PWM, 0); // R_PWM = clockwise 
+      analogWrite(L_PWM, pwm);
+    } else if (rotationError < -2) { // Retract to correct overshoot
+      analogWrite(R_PWM, pwm);
+      analogWrite(L_PWM, 0); // L_PWM = counter-clockwise
+    }
+
+  } else { // Target reached
+    Serial.print("Target reached!");
+    setStripColor(0, 255, 0); // Led strip: green
+    
+    analogWrite(R_PWM, 0);
+    analogWrite(L_PWM, 0);
+    digitalWrite(R_EN, LOW);
+    digitalWrite(L_EN, LOW);
+
+    // Reset rotation variables
+    totalRotation = 0;
+    rotationCounter = 0.0;
+    totalAbsRotation = 0.0;
+    previousPosition = currentPosition; // Fix: reset encoder reference
+
+    pid.reset();
+    a_start = a_actual;  // Update start position
+    firstReading = true; // Reset first reading
+  }
+
+delay(5);
+
+Serial.print("Force: ");
+Serial.print(force, 2);
+Serial.print(" | a_target: ");
+Serial.print(a_target, 2);
+Serial.print(" | a_actual: ");
+Serial.print(a_actual, 2);
+Serial.print(" | delta_a: ");
+Serial.print(delta_a, 2);
+Serial.print(" | totalAbsRotation: ");
+Serial.print(totalAbsRotation, 2);
+Serial.print(" | rotationError: ");
+Serial.print(rotationError, 2);
+Serial.print(" | rotationCounter: ");
+Serial.println(rotationCounter, 4);
+
 
 }
-
-
-
-
-
 
 
 
