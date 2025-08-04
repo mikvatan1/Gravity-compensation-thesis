@@ -33,6 +33,7 @@ bool firstReading = true;
 int previousPosition = 0;
 int currentPosition = 0;
 long totalRotation = 0;
+long displayRotation = 0; // Separate display variable that can be reset
 float rotationCounter = 0.0;
 float targetRotations = 0;
 
@@ -43,7 +44,9 @@ static float lastATarget = 0.0;
 static bool firstADCRead = true;
 
 bool running = false;
-bool lastMotorState = false; // Track motor state 
+bool lastMotorState = false; // Track motor state for LED updates
+bool ledUpdatePending = false; // Flag for pending LED update
+uint8_t pendingR = 0, pendingG = 0, pendingB = 0; // Pending LED colors
 
 
 Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
@@ -77,6 +80,23 @@ void setStripColor(uint8_t r, uint8_t g, uint8_t b) {
     strip.setPixelColor(i, strip.Color(r, g, b)); // Set LED i to the desired color
   }
   strip.show(); 
+}
+
+// Set every 10th LED to show motor status
+void setMotorStatusLEDs(uint8_t r, uint8_t g, uint8_t b) {
+  strip.clear(); // Clear the strip first
+  for (int i = 9; i < NUM_LEDS; i += 10) { // Every 10th LED (10, 20, 30, etc.)
+    strip.setPixelColor(i, strip.Color(r, g, b));
+  }
+  strip.show();
+}
+
+// Fast LED update - just set the flag, don't update immediately
+void requestMotorStatusLEDs(uint8_t r, uint8_t g, uint8_t b) {
+  pendingR = r;
+  pendingG = g;
+  pendingB = b;
+  ledUpdatePending = true;
 }
 
 unsigned long startMillis = 0;
@@ -145,8 +165,9 @@ void loop() {
     int diff = currentPosition - previousPosition;
     if (diff > 2048) diff -= 4096;
     else if (diff < -2048) diff += 4096;
-    totalRotation += diff;
-    rotationCounter = totalRotation * ROTATION_MULTIPLIER; // Use pre-calculated constant
+    totalRotation += diff; // Keep accumulating for actual position control
+    displayRotation += diff; // Also accumulate for display (can be reset)
+    rotationCounter = totalRotation * ROTATION_MULTIPLIER; // Use total for control
     previousPosition = currentPosition;
   }
   
@@ -173,34 +194,35 @@ void loop() {
   float error_a = a_target - a_actual;
   t5 = micros();
 
-  if (fabs(error_a) > 5) {
+  if (fabs(error_a) > 2) {
 
     // Enable motor driver
     digitalWrite(R_EN, HIGH);
     digitalWrite(L_EN, HIGH);
 
-    // Update LEDs only on state change
-    //if (!lastMotorState) {
-    //  setStripColor(255, 0, 0); // Led strip: red
-    //  lastMotorState = true;
-    //}
+    // Update LEDs only on state change - motor turning (RED)
+    if (!lastMotorState) {
+      requestMotorStatusLEDs(255, 0, 0); // Request red LEDs (non-blocking)
+      lastMotorState = true;
+    }
 
     float output = pid.compute(a_target, a_actual); // PID calculation 
     int pwm = constrain(abs(output), 30, 75); // PWM constraints
 
-    if (error_a > 5) { 
+    if (error_a > 2) { 
       analogWrite(R_PWM, 0); // R_PWM corresponds to clockwise in reality
       analogWrite(L_PWM, pwm);
-    } else if (error_a < -5) { // 
+    } else if (error_a < -2) { // 
       analogWrite(R_PWM, pwm);
       analogWrite(L_PWM, 0); // L_PWM = counter-clockwise
     }
 
   } else { 
-    //if (lastMotorState) {
-    //  setStripColor(0, 255, 0); // Led strip: green
-    //  lastMotorState = false;
-    //}
+    // Update LEDs only on state change - motor stopped (GREEN)
+    if (lastMotorState) {
+      requestMotorStatusLEDs(0, 255, 0); // Request green LEDs (non-blocking)
+      lastMotorState = false;
+    }
 
     analogWrite(R_PWM, 0);
     analogWrite(L_PWM, 0);
@@ -210,6 +232,9 @@ void loop() {
     // Don't reset rotation tracking - keep accumulating position
     // Only reset PID to avoid wind-up
     pid.reset();
+    
+    // Reset display rotation for visual reference (target reached)
+    displayRotation = 0;
   }
   
   t6 = micros();
@@ -220,6 +245,7 @@ if (currentLoopTime > maxLoopTime) maxLoopTime = currentLoopTime;
 if (currentLoopTime < minLoopTime) minLoopTime = currentLoopTime;
 
 // Performance analysis - print timing breakdown every 2 seconds
+/*
 static unsigned long lastTimingPrint = 0;
 if (millis() - lastTimingPrint > 2000) {
   Serial.print("TIMING BREAKDOWN (μs): ");
@@ -235,9 +261,16 @@ if (millis() - lastTimingPrint > 2000) {
   Serial.println();
   lastTimingPrint = millis();
 }
+*/
 
 // Serial output only every 200ms to reduce loop time further
 if (millis() - lastPrintTime > 1000) {
+  // Handle pending LED updates here (outside critical loop timing)
+  if (ledUpdatePending) {
+    setMotorStatusLEDs(pendingR, pendingG, pendingB);
+    ledUpdatePending = false;
+  }
+  
   float timestamp = millis() / 1000.0;
   float control = pid.getOutput();
   float p = pid.getPTerm();
@@ -266,7 +299,7 @@ if (millis() - lastPrintTime > 1000) {
   Serial.print(" | rot_Counter: ");
   Serial.print(rotationCounter, 2);
   Serial.print(" | totalRot: ");
-  Serial.print(totalRotation);
+  Serial.print(displayRotation); // Display the resetable rotation counter
   Serial.print(" | Current LoopTime (μs): ");
   Serial.print(currentLoopTime);
   Serial.println();
