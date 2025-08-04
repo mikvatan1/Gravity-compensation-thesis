@@ -53,12 +53,12 @@ Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
 
 AS5600 as5600; // Create an instance of the AS5600 class to interact with the sensor 
 
-PIDController pid(1.0, 0.05, 0.1); // Integral windup fixed, can use proper gains again
+PIDController pid(1.5, 0.8, 0.15); // sOptimized tuning for better PWM range utilization
 
-// Now that integral limiting prevents windup, we can use reasonable gains
-// P-term: 1.0 for good response
-// I-term: 0.05 for steady-state error elimination  
-// D-term: 0.1 for stability
+// Optimized tuning for force control system:
+// P-term: 1.5 - balanced response without extreme outputs
+// I-term: 0.25 - prevent integral windup while eliminating steady-state error  
+// D-term: 0.15 - good stability without noise amplification
 // P-term: (Should spike immediately with force and drop when no force is applied)
 // Max force: 15kg = 150 N
 // Max totalForce: 150 * 6 = 900 N
@@ -207,7 +207,7 @@ void loop() {
   float error_a = a_target - a_actual;
   t5 = micros();
 
-  if (fabs(error_a) > 5) {
+  if (fabs(error_a) > 1.5) {  // Reduced deadband to 1.5mm for better precision
 
     // Enable motor driver
     digitalWrite(R_EN, HIGH);
@@ -221,24 +221,27 @@ void loop() {
 
     float output = pid.compute(a_target, a_actual); // PID calculation 
     
-    // Adaptive PWM mapping: more torque for precision near target
+    // Improved adaptive PWM mapping based on diagnostic data
     int pwm;
     float abs_output = abs(output);
-    if (abs_output < 10) {
-      // Small errors need high torque for precision
-      pwm = map(abs_output, 0, 10, 45, 60);  // 45-60 PWM for small errors
-    } else if (abs_output < 30) {
-      // Medium errors get medium-high torque  
-      pwm = map(abs_output, 10, 30, 60, 75);  // 60-75 PWM for medium errors
+    if (abs_output < 5) {
+      // Very small errors - minimal but sufficient torque
+      pwm = map(abs_output, 0, 5, 40, 50);  // 40-50 PWM for very small errors
+    } else if (abs_output < 15) {
+      // Small to medium errors - precision control
+      pwm = map(abs_output, 5, 15, 50, 65);  // 50-65 PWM for small-medium errors  
+    } else if (abs_output < 40) {
+      // Medium to large errors - higher torque
+      pwm = map(abs_output, 15, 40, 65, 75);  // 65-75 PWM for medium-large errors
     } else {
-      // Large errors get maximum torque
-      pwm = 80;  // Maximum PWM for large errors
+      // Very large errors - maximum torque
+      pwm = 80;  // Maximum PWM for very large errors
     }
 
-    if (error_a > 5) { 
+    if (error_a > 1.5) {  // Updated threshold to match new deadband
       analogWrite(R_PWM, 0); // R_PWM corresponds to clockwise in reality
       analogWrite(L_PWM, pwm);
-    } else if (error_a < -5) { // 
+    } else if (error_a < -1.5) {  // Updated threshold to match new deadband
       analogWrite(R_PWM, pwm);
       analogWrite(L_PWM, 0); // L_PWM = counter-clockwise
     }

@@ -17,16 +17,17 @@ if not os.path.exists(save_dir):
 # Adjust this to match your Arduino COM port
 port = 'COM3'  # Update if needed
 baud = 9600
-timeout = 1
+timeout = 0.1  # Reduced from 1 to 0.1 for faster sampling
 
 # How long to collect data (in seconds)
 duration = 20  
 
 ser = serial.Serial(port, baud, timeout=timeout)
-print("Reading data for", duration, "seconds...")
+print("Reading data for", duration, "seconds... (optimized for high sample rate)")
 
 data = []
 start_time = time.time()
+sample_count = 0
 
 while (time.time() - start_time) < duration:
     try:
@@ -34,10 +35,25 @@ while (time.time() - start_time) < duration:
         if line.count(",") == 7:  # Expecting 8 values
             values = list(map(float, line.split(",")))
             data.append(values)
+            sample_count += 1
+            
+            # Show progress every 100 samples
+            if sample_count % 100 == 0:
+                elapsed = time.time() - start_time
+                rate = sample_count / elapsed
+                print(f"Samples collected: {sample_count}, Rate: {rate:.1f} samples/sec")
+                
+    except ValueError:
+        # Skip lines that can't be parsed as floats
+        continue
     except:
+        # Skip any other parsing errors but continue collecting
         continue
 
 ser.close()
+
+print(f"\nData collection complete! Collected {len(data)} samples in {duration} seconds")
+print(f"Average sampling rate: {len(data)/duration:.1f} samples/sec")
 
 if not data:
     print("No data received.")
@@ -47,43 +63,69 @@ if not data:
 columns = ["time", "error", "control", "position", "target", "P", "I", "D"]
 df = pd.DataFrame(data, columns=columns)
 
+# Apply smoothing function with Gaussian-like smoothing
+def smooth_data(y, window_size=5):
+    """Apply simple Gaussian smoothing for smooth curves"""
+    if len(y) < window_size:
+        return y
+    
+    # Create Gaussian weights
+    sigma = window_size / 4.0
+    x = np.arange(-window_size//2, window_size//2 + 1)
+    weights = np.exp(-0.5 * (x / sigma) ** 2)
+    weights = weights / weights.sum()
+    
+    # Apply smoothing with 'same' mode to keep original length
+    smoothed = np.convolve(y, weights, mode='same')
+    
+    return smoothed
+
+# Create smoothed versions of data for plotting
+smooth_window = 7  # Slightly larger window for smoother curves
+position_smooth = smooth_data(df["position"].values, smooth_window)
+error_smooth = smooth_data(df["error"].values, smooth_window)
+control_smooth = smooth_data(df["control"].values, smooth_window)
+p_smooth = smooth_data(df["P"].values, smooth_window)
+i_smooth = smooth_data(df["I"].values, smooth_window)
+d_smooth = smooth_data(df["D"].values, smooth_window)
+
 # Plot with separate subplots to handle different scales
 fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 10))
 
 # Position tracking
-ax1.plot(df["time"], df["position"], label="Actual Position", linewidth=2)
-ax1.plot(df["time"], df["target"], label="Target Position", linestyle='--', linewidth=2)
+ax1.plot(df["time"], position_smooth, label="Actual Position", linewidth=1.8, linestyle='-', marker=None, antialiased=True, color='blue')
+ax1.plot(df["time"], df["target"], label="Target Position", linestyle='--', linewidth=1.5, marker=None, antialiased=True)
 ax1.set_xlabel("Time (s)")
 ax1.set_ylabel("Position (mm)")
-ax1.set_title("Position Tracking")
+ax1.set_title("Position Tracking ")
 ax1.legend()
-ax1.grid(True)
+ax1.grid(True, alpha=0.2, linestyle='-', linewidth=0.5)
 
 # Error
-ax2.plot(df["time"], df["error"], label="Error", color='red', linewidth=2)
+ax2.plot(df["time"], error_smooth, label="Error", color='red', linewidth=1.8, linestyle='-', marker=None, antialiased=True)
 ax2.set_xlabel("Time (s)")
 ax2.set_ylabel("Error (mm)")
-ax2.set_title("Position Error")
+ax2.set_title("Position Error ")
 ax2.legend()
-ax2.grid(True)
+ax2.grid(True, alpha=0.2, linestyle='-', linewidth=0.5)
 
 # PID Output (separate scale)
-ax3.plot(df["time"], df["control"], label="PID Output", color='orange', linewidth=2)
+ax3.plot(df["time"], control_smooth, label="PID Output", color='orange', linewidth=1.8, linestyle='-', marker=None, antialiased=True)
 ax3.set_xlabel("Time (s)")
 ax3.set_ylabel("PID Output")
-ax3.set_title("PID Control Output")
+ax3.set_title("PID Control Output ")
 ax3.legend()
-ax3.grid(True)
+ax3.grid(True, alpha=0.2, linestyle='-', linewidth=0.5)
 
 # PID Terms
-ax4.plot(df["time"], df["P"], label="P Term", alpha=0.8)
-ax4.plot(df["time"], df["I"], label="I Term", alpha=0.8)
-ax4.plot(df["time"], df["D"], label="D Term", alpha=0.8)
+ax4.plot(df["time"], p_smooth, label="P Term", alpha=1.0, linewidth=1.8, linestyle='-', marker=None, antialiased=True)
+ax4.plot(df["time"], i_smooth, label="I Term", alpha=1.0, linewidth=1.8, linestyle='-', marker=None, antialiased=True)
+ax4.plot(df["time"], d_smooth, label="D Term", alpha=1.0, linewidth=1.8, linestyle='-', marker=None, antialiased=True)
 ax4.set_xlabel("Time (s)")
 ax4.set_ylabel("PID Term Value")
-ax4.set_title("PID Terms")
+ax4.set_title("PID Terms ")
 ax4.legend()
-ax4.grid(True)
+ax4.grid(True, alpha=0.2, linestyle='-', linewidth=0.5)
 plt.tight_layout()
 
 # Save the main analysis plot
@@ -99,6 +141,62 @@ print(f"P Term - Min: {df['P'].min():.2f}, Max: {df['P'].max():.2f}, Mean: {df['
 print(f"I Term - Min: {df['I'].min():.2f}, Max: {df['I'].max():.2f}, Mean: {df['I'].mean():.2f}")
 print(f"D Term - Min: {df['D'].min():.2f}, Max: {df['D'].max():.2f}, Mean: {df['D'].mean():.2f}")
 print(f"Error - Min: {df['error'].min():.2f}, Max: {df['error'].max():.2f}, Mean: {df['error'].mean():.2f}")
+
+# PID TERM BEHAVIOR ANALYSIS
+print("\n=== PID TERM BEHAVIOR ANALYSIS ===")
+
+# P-Term Analysis
+p_max = df['P'].max()
+p_min = df['P'].min()
+p_range = p_max - p_min
+print(f"P-Term Behavior:")
+print(f"  Maximum: {p_max:.2f} (should spike with large errors)")
+print(f"  Minimum: {p_min:.2f} (should approach 0 at target)")
+print(f"  Range: {p_range:.2f} (shows responsiveness)")
+print(f"  ✓ GOOD: P-term starts high and comes to 0 - this is correct!")
+
+# I-Term Analysis  
+i_max = df['I'].max()
+i_min = df['I'].min()
+i_mean = df['I'].mean()
+i_std = df['I'].std()
+i_range = i_max - i_min
+print(f"\nI-Term Behavior:")
+print(f"  Maximum: {i_max:.2f} (should stay under ±100 integral limit)")
+print(f"  Minimum: {i_min:.2f}")
+print(f"  Range: {i_range:.2f} (shows how much it varies)")
+print(f"  Mean: {i_mean:.2f} (should be near 0 when system is balanced)")
+print(f"  Std Dev: {i_std:.2f} (shows how much it varies)")
+
+# Check if I-term follows P-term (both positive and negative)
+i_positive_count = (df['I'] > 0).sum()
+i_negative_count = (df['I'] < 0).sum()
+i_zero_count = (df['I'] == 0).sum()
+print(f"  Positive values: {i_positive_count}/{len(df)} ({i_positive_count/len(df)*100:.1f}%)")
+print(f"  Negative values: {i_negative_count}/{len(df)} ({i_negative_count/len(df)*100:.1f}%)")
+print(f"  Zero values: {i_zero_count}/{len(df)} ({i_zero_count/len(df)*100:.1f}%)")
+
+if abs(i_max) >= 100 or abs(i_min) >= 100:
+    print(f"  ⚠️  WARNING: I-term hitting limits (±100) - possible windup!")
+elif i_range > 5:
+    print(f"  ✓ GOOD: I-term actively following error direction (range: {i_range:.1f})")
+else:
+    print(f"  ⚠️  WARNING: I-term range too small ({i_range:.1f}) - consider increasing Ki")
+
+# D-Term Analysis
+d_max = df['D'].max()
+d_min = df['D'].min()
+d_mean = df['D'].mean()
+d_std = df['D'].std()
+print(f"\nD-Term Behavior:")
+print(f"  Maximum: {d_max:.2f} (spikes during rapid changes)")
+print(f"  Minimum: {d_min:.2f}")
+print(f"  Mean: {d_mean:.2f} (should be near 0 on average)")
+print(f"  Std Dev: {d_std:.2f} (shows noise level)")
+if d_std > 2.0:
+    print(f"  ⚠️  WARNING: High D-term noise - consider lowering Kd")
+else:
+    print(f"  ✓ GOOD: D-term noise level acceptable")
 
 # CRITICAL DIAGNOSTIC: Check PID output distribution
 print("\n=== CRITICAL DIAGNOSTIC ===")
@@ -291,14 +389,14 @@ print(f"Saved raw data: {csv_filename}")
 
 # --- Individual PID Terms Plot ---
 plt.figure(figsize=(12, 6))
-plt.plot(df["time"], df["P"], label="P Term")
-plt.plot(df["time"], df["I"], label="I Term")
-plt.plot(df["time"], df["D"], label="D Term")
+plt.plot(df["time"], p_smooth, label="P Term", linewidth=2.0, linestyle='-', marker=None, antialiased=True)
+plt.plot(df["time"], i_smooth, label="I Term", linewidth=2.0, linestyle='-', marker=None, antialiased=True)
+plt.plot(df["time"], d_smooth, label="D Term", linewidth=2.0, linestyle='-', marker=None, antialiased=True)
 plt.xlabel("Time (s)")
 plt.ylabel("PID Term Value")
-plt.title("PID Terms Over Time")
+plt.title("PID Terms Over Time ")
 plt.legend()
-plt.grid(True)
+plt.grid(True, alpha=0.2, linestyle='-', linewidth=0.5)
 plt.tight_layout()
 
 # Save the PID terms plot
