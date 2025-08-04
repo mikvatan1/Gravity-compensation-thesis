@@ -1,0 +1,10 @@
+=== PID Analysis Statistics ===
+Test Date: 2025-08-04 13:49:30
+Duration: 20 seconds
+Data Points: 19 samples
+
+PID Output - Min: -3697.86, Max: 5904.24, Mean: 472.49
+P Term - Min: -49.41, Max: 47.96, Mean: 2.45
+I Term - Min: -3675.21, Max: 5883.60, Mean: 470.04
+D Term - Min: 0.00, Max: 0.07, Mean: 0.00
+Error - Min: -32.94, Max: 31.97, Mean: 1.24

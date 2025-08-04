@@ -53,7 +53,10 @@ Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
 
 AS5600 as5600; // Create an instance of the AS5600 class to interact with the sensor 
 
-PIDController pid(2.3, 0.1, 0.0); // Kp, Ki, Kd - Optimized for 15kg max force
+PIDController pid(0.8, 0.1, 0.5); // Reduced gains for better control
+// P-term: Reduced from 2.3 to 1.5 to prevent massive outputs
+// I-term: Reduced from 0.1 to 0.05 to prevent windup
+// D-term: Keep at 0.0 for now
 // P-term: (Should spike immediately with force and drop when no force is applied)
 // Max force: 15kg = 150 N
 // Max totalForce: 150 * 6 = 900 N
