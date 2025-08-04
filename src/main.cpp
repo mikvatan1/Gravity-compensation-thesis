@@ -53,16 +53,18 @@ Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
 
 AS5600 as5600; // Create an instance of the AS5600 class to interact with the sensor 
 
-PIDController pid(0.8, 0.1, 0.5); // Reduced gains for better control
-// P-term: Reduced from 2.3 to 1.5 to prevent massive outputs
-// I-term: Reduced from 0.1 to 0.05 to prevent windup
-// D-term: Keep at 0.0 for now
+PIDController pid(1.0, 0.05, 0.1); // Integral windup fixed, can use proper gains again
+
+// Now that integral limiting prevents windup, we can use reasonable gains
+// P-term: 1.0 for good response
+// I-term: 0.05 for steady-state error elimination  
+// D-term: 0.1 for stability
 // P-term: (Should spike immediately with force and drop when no force is applied)
 // Max force: 15kg = 150 N
 // Max totalForce: 150 * 6 = 900 N
-// Max a_target: 900/(1.97*2) = 227.4 mm
-// Max targetRotations: 227.4/2.0 = 113.7 rotations
-// Optimal Kp: 255/113.7 ≈ 2.2
+// Max a_target: 900/(1.97*2) = 110 mm
+// Max targetRotations: 110/2.0 = 55 rotations
+// Optimal Kp: 50/55 ≈ 0.91
 // For your maximum expected ERROR, the PID output should be around 255 (max speed):
 
 // I-term: (Should gradually build up during sustained error and flatten out when target is reached)
@@ -205,7 +207,7 @@ void loop() {
   float error_a = a_target - a_actual;
   t5 = micros();
 
-  if (fabs(error_a) > 2) {
+  if (fabs(error_a) > 5) {
 
     // Enable motor driver
     digitalWrite(R_EN, HIGH);
@@ -218,12 +220,25 @@ void loop() {
     }
 
     float output = pid.compute(a_target, a_actual); // PID calculation 
-    int pwm = constrain(abs(output), 20, 50); // PWM constraints
+    
+    // Adaptive PWM mapping: more torque for precision near target
+    int pwm;
+    float abs_output = abs(output);
+    if (abs_output < 10) {
+      // Small errors need high torque for precision
+      pwm = map(abs_output, 0, 10, 45, 60);  // 45-60 PWM for small errors
+    } else if (abs_output < 30) {
+      // Medium errors get medium-high torque  
+      pwm = map(abs_output, 10, 30, 60, 75);  // 60-75 PWM for medium errors
+    } else {
+      // Large errors get maximum torque
+      pwm = 80;  // Maximum PWM for large errors
+    }
 
-    if (error_a > 2) { 
+    if (error_a > 5) { 
       analogWrite(R_PWM, 0); // R_PWM corresponds to clockwise in reality
       analogWrite(L_PWM, pwm);
-    } else if (error_a < -2) { // 
+    } else if (error_a < -5) { // 
       analogWrite(R_PWM, pwm);
       analogWrite(L_PWM, 0); // L_PWM = counter-clockwise
     }

@@ -100,6 +100,19 @@ print(f"I Term - Min: {df['I'].min():.2f}, Max: {df['I'].max():.2f}, Mean: {df['
 print(f"D Term - Min: {df['D'].min():.2f}, Max: {df['D'].max():.2f}, Mean: {df['D'].mean():.2f}")
 print(f"Error - Min: {df['error'].min():.2f}, Max: {df['error'].max():.2f}, Mean: {df['error'].mean():.2f}")
 
+# CRITICAL DIAGNOSTIC: Check PID output distribution
+print("\n=== CRITICAL DIAGNOSTIC ===")
+pid_outputs = df['control']
+print(f"Raw PID Output Distribution:")
+print(f"  < 10: {(abs(pid_outputs) < 10).sum()}/{len(pid_outputs)} ({(abs(pid_outputs) < 10).sum()/len(pid_outputs)*100:.1f}%)")
+print(f"  10-20: {((abs(pid_outputs) >= 10) & (abs(pid_outputs) < 20)).sum()}/{len(pid_outputs)} ({((abs(pid_outputs) >= 10) & (abs(pid_outputs) < 20)).sum()/len(pid_outputs)*100:.1f}%)")
+print(f"  20-40: {((abs(pid_outputs) >= 20) & (abs(pid_outputs) < 40)).sum()}/{len(pid_outputs)} ({((abs(pid_outputs) >= 20) & (abs(pid_outputs) < 40)).sum()/len(pid_outputs)*100:.1f}%)")
+print(f"  40-80: {((abs(pid_outputs) >= 40) & (abs(pid_outputs) < 80)).sum()}/{len(pid_outputs)} ({((abs(pid_outputs) >= 40) & (abs(pid_outputs) < 80)).sum()/len(pid_outputs)*100:.1f}%)")
+print(f"  >= 80: {(abs(pid_outputs) >= 80).sum()}/{len(pid_outputs)} ({(abs(pid_outputs) >= 80).sum()/len(pid_outputs)*100:.1f}%)")
+
+print(f"\nPID Output Range: {pid_outputs.min():.2f} to {pid_outputs.max():.2f}")
+print(f"This shows what PID controller actually wants to output")
+
 # Calculate Performance Metrics
 def calculate_performance_metrics(df):
     """Calculate comprehensive PID performance metrics"""
@@ -255,19 +268,19 @@ with open(stats_filename, 'w', encoding='utf-8') as f:
     # PID Tuning Assessment
     f.write(f"\n=== PID Tuning Assessment ===\n")
     if performance_metrics['rmse'] < 1.0:
-        f.write("✓ Good accuracy (RMSE < 1mm)\n")
+        f.write("[OK] Good accuracy (RMSE < 1mm)\n")
     else:
-        f.write("⚠ Consider improving accuracy (RMSE > 1mm)\n")
+        f.write("[WARNING] Consider improving accuracy (RMSE > 1mm)\n")
     
     if performance_metrics['overshoots'] and np.mean(performance_metrics['overshoots']) > 10:
-        f.write("⚠ High overshoot - consider reducing Kp or adding Kd\n")
+        f.write("[WARNING] High overshoot - consider reducing Kp or adding Kd\n")
     elif performance_metrics['overshoots']:
-        f.write("✓ Acceptable overshoot\n")
+        f.write("[OK] Acceptable overshoot\n")
     
     if performance_metrics['settling_times'] and np.mean(performance_metrics['settling_times']) > 2.0:
-        f.write("⚠ Slow settling - consider increasing Kp or Ki\n")
+        f.write("[WARNING] Slow settling - consider increasing Kp or Ki\n")
     elif performance_metrics['settling_times']:
-        f.write("✓ Good settling time\n")
+        f.write("[OK] Good settling time\n")
 
 print(f"Saved enhanced statistics: {stats_filename}")
 

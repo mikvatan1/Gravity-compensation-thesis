@@ -31,6 +31,11 @@ void PIDController::setTunings(float kp, float ki, float kd) {
 float PIDController::compute(float setpoint, float measured) {
     float error = setpoint - measured;
     integral += error;
+    
+    // Integral windup prevention - limit integral to reasonable range
+    if (integral > 100.0) integral = 100.0;
+    if (integral < -100.0) integral = -100.0;
+    
     float derivative = error - lastError;
 
     pTerm = Kp * error;

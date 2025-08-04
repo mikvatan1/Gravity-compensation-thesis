@@ -1,0 +1,23 @@
+=== PID Analysis Statistics ===
+Test Date: 2025-08-04 14:16:01
+Duration: 20 seconds
+Data Points: 19 samples
+
+=== Basic Statistics ===
+PID Output - Min: -2.84, Max: 1058.42, Mean: 55.56
+P Term - Min: -1.73, Max: 45.90, Mean: 2.32
+I Term - Min: -0.02, Max: 1012.09, Mean: 53.27
+D Term - Min: -1.08, Max: 0.43, Mean: -0.03
+Error - Min: -2.17, Max: 57.38, Mean: 1.84
+
+=== Performance Metrics ===
+RMSE (Root Mean Square Error): 13.233 mm
+MAE (Mean Absolute Error): 4.296 mm
+Maximum Absolute Error: 57.380 mm
+Error Standard Deviation: 13.105 mm
+
+=== Dynamic Response Metrics ===
+No significant step responses detected for dynamic analysis
+
+=== PID Tuning Assessment ===
+[WARNING] Consider improving accuracy (RMSE > 1mm)
