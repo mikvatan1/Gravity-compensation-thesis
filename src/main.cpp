@@ -117,13 +117,17 @@ void setup() {
   ADCSRA &= ~(bit(ADPS0) | bit(ADPS1) | bit(ADPS2)); // Clear prescaler bits
   ADCSRA |= bit(ADPS2) | bit(ADPS0);                  // Set prescaler to 32 (500kHz)
   
-  // Motor driver pins as output
+  // Motor driver pins as output - DISABLE FIRST to prevent startup motor movement
   pinMode(R_PWM, OUTPUT);
   pinMode(L_PWM, OUTPUT);
   pinMode(R_EN, OUTPUT);
   pinMode(L_EN, OUTPUT);
-  digitalWrite(R_EN, HIGH);
-  digitalWrite(L_EN, HIGH);
+  
+  // Immediately disable motor to prevent startup movement
+  analogWrite(R_PWM, 0);
+  analogWrite(L_PWM, 0);
+  digitalWrite(R_EN, LOW);
+  digitalWrite(L_EN, LOW);
 
   // Led strip initialization
   strip.begin();
@@ -131,6 +135,10 @@ void setup() {
   strip.show();
 
   Serial.println("Ultra-fast mode enabled");
+  
+  // Wait for AS5600 to stabilize and systems to initialize
+  delay(500); // 500ms delay to prevent startup motor movement
+  
   startMillis = millis();
 }
 
@@ -207,7 +215,7 @@ void loop() {
     }
 
     float output = pid.compute(a_target, a_actual); // PID calculation 
-    int pwm = constrain(abs(output), 30, 75); // PWM constraints
+    int pwm = constrain(abs(output), 20, 50); // PWM constraints
 
     if (error_a > 2) { 
       analogWrite(R_PWM, 0); // R_PWM corresponds to clockwise in reality
@@ -263,7 +271,7 @@ if (millis() - lastTimingPrint > 2000) {
 }
 */
 
-// Serial output only every 200ms to reduce loop time further
+// Serial output only every 1000ms to reduce loop time further
 if (millis() - lastPrintTime > 1000) {
   // Handle pending LED updates here (outside critical loop timing)
   if (ledUpdatePending) {
@@ -288,6 +296,7 @@ if (millis() - lastPrintTime > 1000) {
   Serial.print(i, 2); Serial.print(",");
   Serial.println(d, 2);
 
+  /*
   Serial.print("Force: ");
   Serial.print(force, 2);
   Serial.print(" | a_target: ");
@@ -299,11 +308,12 @@ if (millis() - lastPrintTime > 1000) {
   Serial.print(" | rot_Counter: ");
   Serial.print(rotationCounter, 2);
   Serial.print(" | totalRot: ");
-  Serial.print(displayRotation); // Display the resetable rotation counter
+  Serial.print(displayRotation * ROTATION_MULTIPLIER, 2); // Convert to actual rotations
   Serial.print(" | Current LoopTime (μs): ");
   Serial.print(currentLoopTime);
   Serial.println();
-  
+  */
+
   // Reset min/max after printing
   minLoopTime = 999999;
   maxLoopTime = 0;
