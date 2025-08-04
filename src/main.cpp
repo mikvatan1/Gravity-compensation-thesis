@@ -23,6 +23,11 @@ float a_start = 0; // [mm] Manually set start value of a, corresponds to the act
 float a_target = 0; // [mm] Starting value of a
 float angle = 0.0; 
 
+// Pre-calculated constants for ultra-fast math
+const float ADC_TO_FORCE = (5.0 / 1023.0) * 29.361 * 6; // Combined: voltage conversion * calibration * total force multiplier
+const float FORCE_TO_TARGET = 1.0 / (k_spring * num_springs); // 1/(1.97*2) = 0.253807
+const float ROTATION_MULTIPLIER = 1.0 / 4096.0; // Pre-calculated 1/4096 
+
 // Rotation tracking variables
 bool firstReading = true;
 int previousPosition = 0;
@@ -78,9 +83,13 @@ unsigned long minLoopTime = 999999;
 void setup() {
   Serial.begin(9600); // Baud rate
   Wire.begin(); // Initialize I2C 
-  Wire.setClock(800000); // Set I2C speed to 800 kHz (was 400000)
+  Wire.setClock(400000); // Reliable I2C speed for AS5600 (400kHz)
   as5600.begin(4);  // 4 = number of fast I2C transmissions
   as5600.setDirection(AS5600_CLOCK_WISE); // Set rotation direction (now matches physical direction)
+  
+  // Ultra-fast ADC settings (prescaler 32 = 500kHz)
+  ADCSRA &= ~(bit(ADPS0) | bit(ADPS1) | bit(ADPS2)); // Clear prescaler bits
+  ADCSRA |= bit(ADPS2) | bit(ADPS0);                  // Set prescaler to 32 (500kHz)
   
   // Motor driver pins as output
   pinMode(R_PWM, OUTPUT);
@@ -95,6 +104,7 @@ void setup() {
   strip.setBrightness(LED_BRIGHTNESS);
   strip.show();
 
+  Serial.println("Ultra-fast mode enabled");
   startMillis = millis();
 }
 
@@ -114,9 +124,9 @@ void loop() {
     }
 
   }
-  int currentPosition = as5600.rawAngle();  // 0-4095
+  currentPosition = as5600.rawAngle();  // 0-4095
   
-  // Rotation tracking - Using robust method with modulo arithmetic
+  // Original rotation tracking logic that worked
   if (firstReading) {
     previousPosition = currentPosition;
     firstReading = false;
@@ -130,13 +140,11 @@ void loop() {
     previousPosition = currentPosition;
   }
 
-  // Read the force sensor (Load Cell)
+  // Ultra-fast math - single calculation chain
   int rawADC = analogRead(LOAD_CELL); 
-  float voltage = (rawADC * 5.0) / 1023.0; // Convert to voltage
-  float force = voltage * 29.361;  // force (N) 
-  float totalForce = force * 6; // Total force 
-  float a_target = totalForce/(k_spring*num_springs); // a(mm), k(N/mm), F = a*k
-  float a_actual = a_start + (rotationCounter * spoed); // Actual position of a
+  float force = rawADC * ADC_TO_FORCE; // Single multiplication instead of 4 operations
+  float a_target = force * FORCE_TO_TARGET; // Single multiplication instead of division
+  float a_actual = a_start + (rotationCounter * spoed);
   float error_a = a_target - a_actual;
 
   if (fabs(error_a) > 5) {
@@ -152,14 +160,14 @@ void loop() {
     }
 
     float output = pid.compute(a_target, a_actual); // PID calculation 
-    int pwm = constrain(abs(output), 20, 100); // PWM constraints
+    int pwm = constrain(abs(output), 30, 75); // PWM constraints
 
     if (error_a > 5) { 
-      analogWrite(R_PWM, pwm); // R_PWM corresponds to clockwise in reality
-      analogWrite(L_PWM, 0);
+      analogWrite(R_PWM, 0); // R_PWM corresponds to clockwise in reality
+      analogWrite(L_PWM, pwm);
     } else if (error_a < -5) { // 
-      analogWrite(R_PWM, 0);
-      analogWrite(L_PWM, pwm); // L_PWM = counter-clockwise
+      analogWrite(R_PWM, pwm);
+      analogWrite(L_PWM, 0); // L_PWM = counter-clockwise
     }
 
   } else { 
@@ -176,9 +184,8 @@ void loop() {
     digitalWrite(R_EN, LOW);
     digitalWrite(L_EN, LOW);
 
-    // Reset rotation tracking
-    previousPosition = as5600.rawAngle(); 
-    firstReading = true;
+    // Don't reset rotation tracking - keep accumulating position
+    // Only reset PID to avoid wind-up
     pid.reset();
   }
 
@@ -187,8 +194,8 @@ unsigned long currentLoopTime = micros() - loopStartTime;
 if (currentLoopTime > maxLoopTime) maxLoopTime = currentLoopTime;
 if (currentLoopTime < minLoopTime) minLoopTime = currentLoopTime;
 
-// Serial output only every 50ms to reduce loop time
-if (millis() - lastPrintTime > 50) {
+// Serial output only every 100ms to reduce loop time
+if (millis() - lastPrintTime > 100) {
   float timestamp = millis() / 1000.0;
   float control = pid.getOutput();
   float p = pid.getPTerm();
@@ -218,6 +225,10 @@ if (millis() - lastPrintTime > 50) {
   Serial.print(rotationCounter, 2);
   Serial.print(" | tot_AbsRot_: ");
   Serial.print(totalAbsRotation, 2);
+  Serial.print(" | rawPos: ");
+  Serial.print(currentPosition);
+  Serial.print(" | totalRot: ");
+  Serial.print(totalRotation);
   Serial.print(" | Min/Max/Current LoopTime (μs): ");
   Serial.print(minLoopTime); Serial.print("/");
   Serial.print(maxLoopTime); Serial.print("/");
