@@ -77,10 +77,10 @@ unsigned long minLoopTime = 999999;
 
 void setup() {
   Serial.begin(9600); // Baud rate
-  // Wire.begin(); // Initialize I2C - commented out for testing without hardware
-  // Wire.setClock(800000); // Set I2C speed to 800 kHz (was 400000)
-  // as5600.begin(4);  // 4 = number of fast I2C transmissions
-  // as5600.setDirection(AS5600_CLOCK_WISE); // Set rotation direction (now matches physical direction)
+  Wire.begin(); // Initialize I2C 
+  Wire.setClock(800000); // Set I2C speed to 800 kHz (was 400000)
+  as5600.begin(4);  // 4 = number of fast I2C transmissions
+  as5600.setDirection(AS5600_CLOCK_WISE); // Set rotation direction (now matches physical direction)
   
   // Motor driver pins as output
   pinMode(R_PWM, OUTPUT);
@@ -114,8 +114,7 @@ void loop() {
     }
 
   }
-  // int currentPosition = as5600.rawAngle();  // 0-4095 - commented out for testing
-  int currentPosition = random(0, 4096); // Simulate encoder reading (delete when using real hardware)
+  int currentPosition = as5600.rawAngle();  // 0-4095
   
   // Rotation tracking - Using robust method with modulo arithmetic
   if (firstReading) {
@@ -132,8 +131,7 @@ void loop() {
   }
 
   // Read the force sensor (Load Cell)
-  // int rawADC = analogRead(LOAD_CELL); - commented out for testing
-  int rawADC = random(100, 900); // Simulate ADC reading (delete when using real hardware)
+  int rawADC = analogRead(LOAD_CELL); 
   float voltage = (rawADC * 5.0) / 1023.0; // Convert to voltage
   float force = voltage * 29.361;  // force (N) 
   float totalForce = force * 6; // Total force 
@@ -179,8 +177,7 @@ void loop() {
     digitalWrite(L_EN, LOW);
 
     // Reset rotation tracking
-    // previousPosition = as5600.rawAngle(); // Commented out for simulation
-    previousPosition = currentPosition; // Use simulation value instead
+    previousPosition = as5600.rawAngle(); 
     firstReading = true;
     pid.reset();
   }
