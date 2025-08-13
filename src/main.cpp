@@ -33,7 +33,7 @@ bool firstReading = true;
 int previousPosition = 0;
 int currentPosition = 0;
 long totalRotation = 0;
-long displayRotation = 0; // Separate display variable that can be reset
+long absRotation = 0; // Separate display variable that can be reset
 float rotationCounter = 0.0;
 float targetRotations = 0;
 
@@ -113,10 +113,18 @@ unsigned long minLoopTime = 999999;
 void setup() {
   Serial.begin(9600); // Baud rate
   Wire.begin(); // Initialize I2C 
-  Wire.setClock(800000); // 800kHz - try again with better timeout
-  Wire.setTimeout(75); // More conservative timeout than before
-  as5600.begin(4);  // Keep original 4 for reliable I2C transmissions
-  as5600.setDirection(AS5600_COUNTERCLOCK_WISE); // Try opposite direction
+  Wire.setClock(400000); // Lower to standard 400kHz for better reliability
+  Wire.setTimeout(100); // Increase timeout for better reliability
+  
+  // Give AS5600 time to initialize properly
+  delay(100);
+  
+  as5600.begin();  // Use default parameters first
+  
+  // Give time for AS5600 to settle after begin()
+  delay(100);
+  
+  as5600.setDirection(AS5600_CLOCK_WISE); // Make encoder increase for clockwise motor movement
   
   // Ultra-fast ADC settings (prescaler 32 = 500kHz)
   ADCSRA &= ~(bit(ADPS0) | bit(ADPS1) | bit(ADPS2)); // Clear prescaler bits
@@ -138,8 +146,6 @@ void setup() {
   strip.begin();
   strip.setBrightness(LED_BRIGHTNESS);
   strip.show();
-
-  Serial.println("Ultra-fast mode enabled");
   
   // Wait for AS5600 to stabilize and systems to initialize
   delay(500); // 500ms delay to prevent startup motor movement
@@ -152,8 +158,9 @@ void setup() {
 }
 
 void loop() {
+
   loopStartTime = micros(); 
-  unsigned long t1, t2, t3, t4, t5, t6;
+//  unsigned long t1, t2`, t3, t4, t5, t6;
 
   // Stop after 20 seconds
   if (millis() - startMillis > 20000) {
@@ -164,14 +171,14 @@ void loop() {
     digitalWrite(R_EN, LOW);
     digitalWrite(L_EN, LOW);
     while (true) {
-      // Stop loop
+      //stop the loop
     }
 
   }
   
-  t1 = micros();
+//  t1 = micros();
   currentPosition = as5600.rawAngle();  // 0-4095
-  t2 = micros();
+//  t2 = micros();
   
   // Original rotation tracking logic that worked
   if (firstReading) {
@@ -179,39 +186,40 @@ void loop() {
     firstReading = false;
   } else {
     // Ultra-optimized rotation tracking
-    int diff = currentPosition - previousPosition;
+    int diff = currentPosition - previousPosition; // Intuitive: current - previous
     if (diff > 2048) diff -= 4096;
     else if (diff < -2048) diff += 4096;
+    diff = -diff; // Negate to match physical motor direction (clockwise = positive)
     totalRotation += diff; // Keep accumulating for actual position control
-    displayRotation += diff; // Also accumulate for display (can be reset)
+    absRotation += abs(diff); // Also accumulate for display
     rotationCounter = totalRotation * ROTATION_MULTIPLIER; // Use total for control
     previousPosition = currentPosition;
   }
   
-  t3 = micros();
+//  t3 = micros();
 
-  // Ultra-fast math - skip ADC reading every other loop (but always read first time)
+  // skip ADC reading every other loop (but always read first time)
   float force, a_target;
   if (!skipADC || firstADCRead) {
     int rawADC = analogRead(LOAD_CELL); 
-    t4 = micros();
+    //t4 = micros();
     force = rawADC * ADC_TO_FORCE;
     a_target = force * FORCE_TO_TARGET;
     lastForce = force;
     lastATarget = a_target;
     firstADCRead = false;
   } else {
-    t4 = micros(); // No ADC read, so t4 = t3
+ //   t4 = micros(); // No ADC read, so t4 = t3
     force = lastForce;
     a_target = lastATarget;
   }
   skipADC = !skipADC; // Toggle for next loop
   
-  float a_actual = a_start - (rotationCounter * spoed);
+  float a_actual = a_start + (rotationCounter * spoed);
   float error_a = a_target - a_actual;
-  t5 = micros();
+  //t5 = micros();
 
-  if (fabs(error_a) > 2) {  // Reduced deadband to 2mm for better precision
+  if (fabs(error_a) > 2) {  // Reduced deadband to 3mm for better precision
 
     // Enable motor driver
     digitalWrite(R_EN, HIGH);
@@ -224,31 +232,14 @@ void loop() {
     }
 
     float output = pid.compute(a_target, a_actual); // PID calculation 
+    int pwm = constrain(abs(output), 80, 180); // PWM constraints
 
-    // Improved adaptive PWM mapping based on diagnostic data
-    int pwm;
-    float abs_output = abs(output);
-    if (abs_output < 5) {
-      // Very small errors - increased torque for better response
-      pwm = map(abs_output, 0, 5, 100, 120);  // Increased from 40-50 to 60-80
-    } else if (abs_output < 15) {
-      // Small to medium errors - precision control
-      pwm = map(abs_output, 5, 15, 120, 140);  // Increased from 50-65 to 80-100
-    } else if (abs_output < 40) {
-      // Medium to large errors - higher torque
-      pwm = map(abs_output, 15, 40, 140, 160);  // Increased from 65-75 to 100-120
-    } else {
-      // Very large errors - maximum torque
-      pwm = 180;  // Maximum PWM for very large errors
-    }
-  
-
-    if (error_a > 2) {  // Updated threshold to match new deadband
-      analogWrite(R_PWM, pwm); // R_PWM corresponds to clockwise in reality
+    if (error_a > 2) {  
+      analogWrite(R_PWM, pwm); // R_PWM = clockwise (a_actual goes up)
       analogWrite(L_PWM, 0);
-    } else if (error_a < -2) {  // Updated threshold to match new deadband
+    } else if (error_a < -2) { 
       analogWrite(R_PWM, 0);
-      analogWrite(L_PWM, pwm); // L_PWM = counter-clockwise
+      analogWrite(L_PWM, pwm); // L_PWM = counter-clockwise (a_actual goes down)
     }
 
   } else { 
@@ -268,10 +259,10 @@ void loop() {
     pid.reset();
     
     // Reset display rotation for visual reference (target reached)
-    displayRotation = 0;
+    absRotation = 0;
   }
   
-  t6 = micros();
+  //t6 = micros();
 
 // Track loop time every loop
 unsigned long currentLoopTime = micros() - loopStartTime;
@@ -307,7 +298,7 @@ if (millis() - lastTimingPrint > 1000) {
   Serial.print(" | rot_Counter: ");
   Serial.print(rotationCounter, 2);
   Serial.print(" | totalRot: ");
-  Serial.print(displayRotation * ROTATION_MULTIPLIER, 2); // Convert to actual rotations
+  Serial.print(absRotation * ROTATION_MULTIPLIER, 2); // Convert to actual rotations
   Serial.print(" | Current LoopTime (μs): ");
   Serial.print(currentLoopTime);
   Serial.println();
@@ -321,7 +312,7 @@ if (millis() - lastPrintTime > 1000) {
     setMotorStatusLEDs(pendingR, pendingG, pendingB);
     ledUpdatePending = false;
   }
-  
+
   /*
   float timestamp = (millis() - startMillis) / 1000.0;
   float control = pid.getOutput();
