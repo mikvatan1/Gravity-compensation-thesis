@@ -33,8 +33,9 @@ float PIDController::compute(float setpoint, float measured) {
     integral += error;
     
     // Integral windup prevention - limit integral to reasonable range
-    if (integral > 100.0) integral = 100.0;
-    if (integral < -100.0) integral = -100.0;
+    // Changed limits to allow for more gradual buildup with Ki=0.2
+    if (integral > 50.0) integral = 50.0;
+    if (integral < -50.0) integral = -50.0;
     
     float derivative = error - lastError;
 

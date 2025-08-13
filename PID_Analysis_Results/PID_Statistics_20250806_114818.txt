@@ -1,0 +1,32 @@
+=== PID Analysis Statistics ===
+Test Date: 2025-08-06 11:48:52
+Duration: 20 seconds
+Data Points: 18 samples
+
+=== Basic Statistics ===
+PID Output - Min: -39.18, Max: 70.64, Mean: 5.27
+P Term - Min: -29.19, Max: 60.64, Mean: 4.16
+I Term - Min: -10.00, Max: 10.00, Mean: 1.11
+D Term - Min: 0.00, Max: 0.03, Mean: 0.00
+Error - Min: -19.46, Max: 40.43, Mean: 2.85
+
+=== Performance Metrics ===
+RMSE (Root Mean Square Error): 12.717 mm
+MAE (Mean Absolute Error): 7.104 mm
+Maximum Absolute Error: 40.430 mm
+Error Standard Deviation: 12.394 mm
+
+=== Dynamic Response Metrics ===
+Average Settling Time: 8.040 s
+Settling Times: ['8.040'] s
+Average Overshoot: 234.6 %
+Overshoots: ['467.2', '2.0'] %
+Average Rise Time: 1.010 s
+Rise Times: ['1.010'] s
+Average Steady-State Error: 0.507 mm
+Steady-State Errors: ['0.507', '0.507'] mm
+
+=== PID Tuning Assessment ===
+[WARNING] Consider improving accuracy (RMSE > 1mm)
+[WARNING] High overshoot - consider reducing Kp or adding Kd
+[WARNING] Slow settling - consider increasing Kp or Ki

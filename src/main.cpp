@@ -53,7 +53,7 @@ Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
 
 AS5600 as5600; // Create an instance of the AS5600 class to interact with the sensor 
 
-PIDController pid(1.5, 0.8, 0.15); // sOptimized tuning for better PWM range utilization
+PIDController pid(1.5, 0.2, 0.15); // sOptimized tuning for better PWM range utilization
 
 // Optimized tuning for force control system:
 // P-term: 1.5 - balanced response without extreme outputs
@@ -116,7 +116,7 @@ void setup() {
   Wire.setClock(800000); // 800kHz - try again with better timeout
   Wire.setTimeout(75); // More conservative timeout than before
   as5600.begin(4);  // Keep original 4 for reliable I2C transmissions
-  as5600.setDirection(AS5600_CLOCK_WISE); // Set rotation direction (now matches physical direction)
+  as5600.setDirection(AS5600_COUNTERCLOCK_WISE); // Try opposite direction
   
   // Ultra-fast ADC settings (prescaler 32 = 500kHz)
   ADCSRA &= ~(bit(ADPS0) | bit(ADPS1) | bit(ADPS2)); // Clear prescaler bits
@@ -144,13 +144,17 @@ void setup() {
   // Wait for AS5600 to stabilize and systems to initialize
   delay(500); // 500ms delay to prevent startup motor movement
   
+  // Initialize PID controller to ensure clean start
+  pid.reset();
+  
   startMillis = millis();
+  lastPrintTime = startMillis - 1000; // Set lastPrintTime so first print happens immediately
 }
 
 void loop() {
   loopStartTime = micros(); 
   unsigned long t1, t2, t3, t4, t5, t6;
-  
+
   // Stop after 20 seconds
   if (millis() - startMillis > 20000) {
     //Serial.println("Stopping after 20 seconds...");
@@ -203,11 +207,11 @@ void loop() {
   }
   skipADC = !skipADC; // Toggle for next loop
   
-  float a_actual = a_start + (rotationCounter * spoed);
+  float a_actual = a_start - (rotationCounter * spoed);
   float error_a = a_target - a_actual;
   t5 = micros();
 
-  if (fabs(error_a) > 1.5) {  // Reduced deadband to 1.5mm for better precision
+  if (fabs(error_a) > 2) {  // Reduced deadband to 2mm for better precision
 
     // Enable motor driver
     digitalWrite(R_EN, HIGH);
@@ -220,30 +224,31 @@ void loop() {
     }
 
     float output = pid.compute(a_target, a_actual); // PID calculation 
-    
+
     // Improved adaptive PWM mapping based on diagnostic data
     int pwm;
     float abs_output = abs(output);
     if (abs_output < 5) {
-      // Very small errors - minimal but sufficient torque
-      pwm = map(abs_output, 0, 5, 40, 50);  // 40-50 PWM for very small errors
+      // Very small errors - increased torque for better response
+      pwm = map(abs_output, 0, 5, 100, 120);  // Increased from 40-50 to 60-80
     } else if (abs_output < 15) {
       // Small to medium errors - precision control
-      pwm = map(abs_output, 5, 15, 50, 65);  // 50-65 PWM for small-medium errors  
+      pwm = map(abs_output, 5, 15, 120, 140);  // Increased from 50-65 to 80-100
     } else if (abs_output < 40) {
       // Medium to large errors - higher torque
-      pwm = map(abs_output, 15, 40, 65, 75);  // 65-75 PWM for medium-large errors
+      pwm = map(abs_output, 15, 40, 140, 160);  // Increased from 65-75 to 100-120
     } else {
       // Very large errors - maximum torque
-      pwm = 80;  // Maximum PWM for very large errors
+      pwm = 180;  // Maximum PWM for very large errors
     }
+  
 
-    if (error_a > 1.5) {  // Updated threshold to match new deadband
-      analogWrite(R_PWM, 0); // R_PWM corresponds to clockwise in reality
-      analogWrite(L_PWM, pwm);
-    } else if (error_a < -1.5) {  // Updated threshold to match new deadband
-      analogWrite(R_PWM, pwm);
-      analogWrite(L_PWM, 0); // L_PWM = counter-clockwise
+    if (error_a > 2) {  // Updated threshold to match new deadband
+      analogWrite(R_PWM, pwm); // R_PWM corresponds to clockwise in reality
+      analogWrite(L_PWM, 0);
+    } else if (error_a < -2) {  // Updated threshold to match new deadband
+      analogWrite(R_PWM, 0);
+      analogWrite(L_PWM, pwm); // L_PWM = counter-clockwise
     }
 
   } else { 
@@ -274,9 +279,10 @@ if (currentLoopTime > maxLoopTime) maxLoopTime = currentLoopTime;
 if (currentLoopTime < minLoopTime) minLoopTime = currentLoopTime;
 
 // Performance analysis - print timing breakdown every 2 seconds
-/*
+
 static unsigned long lastTimingPrint = 0;
-if (millis() - lastTimingPrint > 2000) {
+if (millis() - lastTimingPrint > 1000) {
+  /*
   Serial.print("TIMING BREAKDOWN (μs): ");
   Serial.print("AS5600: "); Serial.print(t2-t1);
   Serial.print(" | Rotation: "); Serial.print(t3-t2);
@@ -289,35 +295,7 @@ if (millis() - lastTimingPrint > 2000) {
   Serial.print(" | ROT_COUNTER: "); Serial.print(rotationCounter, 3);
   Serial.println();
   lastTimingPrint = millis();
-}
-*/
-
-// Serial output only every 1000ms to reduce loop time further
-if (millis() - lastPrintTime > 1000) {
-  // Handle pending LED updates here (outside critical loop timing)
-  if (ledUpdatePending) {
-    setMotorStatusLEDs(pendingR, pendingG, pendingB);
-    ledUpdatePending = false;
-  }
-  
-  float timestamp = millis() / 1000.0;
-  float control = pid.getOutput();
-  float p = pid.getPTerm();
-  float i = pid.getITerm();
-  float d = pid.getDTerm();
-  float position = a_actual;
-  float target = a_target;
-
-  Serial.print(timestamp, 2); Serial.print(",");
-  Serial.print(error_a, 2); Serial.print(",");
-  Serial.print(control, 2); Serial.print(",");
-  Serial.print(position, 2); Serial.print(",");
-  Serial.print(target, 2); Serial.print(",");
-  Serial.print(p, 2); Serial.print(",");
-  Serial.print(i, 2); Serial.print(",");
-  Serial.println(d, 2);
-
-  /*
+  */
   Serial.print("Force: ");
   Serial.print(force, 2);
   Serial.print(" | a_target: ");
@@ -333,7 +311,38 @@ if (millis() - lastPrintTime > 1000) {
   Serial.print(" | Current LoopTime (μs): ");
   Serial.print(currentLoopTime);
   Serial.println();
+}
+
+
+// Serial output only every 1000ms to reduce loop time further
+if (millis() - lastPrintTime > 1000) {
+  // Handle pending LED updates here (outside critical loop timing)
+  if (ledUpdatePending) {
+    setMotorStatusLEDs(pendingR, pendingG, pendingB);
+    ledUpdatePending = false;
+  }
+  
+  /*
+  float timestamp = (millis() - startMillis) / 1000.0;
+  float control = pid.getOutput();
+  float p = pid.getPTerm();
+  float i = pid.getITerm();
+  float d = pid.getDTerm();
+  float position = a_actual;
+  float target = a_target;
+
+  Serial.print(timestamp, 2); Serial.print(",");
+  Serial.print(error_a, 2); Serial.print(",");
+  Serial.print(control, 2); Serial.print(",");
+  Serial.print(position, 2); Serial.print(",");
+  Serial.print(target, 2); Serial.print(",");
+  Serial.print(p, 2); Serial.print(",");
+  Serial.print(i, 2); Serial.print(",");
+  Serial.println(d, 2);
   */
+  
+
+  
 
   // Reset min/max after printing
   minLoopTime = 999999;

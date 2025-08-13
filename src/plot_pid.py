@@ -63,68 +63,66 @@ if not data:
 columns = ["time", "error", "control", "position", "target", "P", "I", "D"]
 df = pd.DataFrame(data, columns=columns)
 
-# Apply smoothing function with Gaussian-like smoothing
-def smooth_data(y, window_size=5):
-    """Apply simple Gaussian smoothing for smooth curves"""
-    if len(y) < window_size:
+# Apply simple smoothing to reduce noise
+def smooth_data(y, window=3):
+    """Apply simple moving average to smooth the data"""
+    if len(y) < window:
         return y
     
-    # Create Gaussian weights
-    sigma = window_size / 4.0
-    x = np.arange(-window_size//2, window_size//2 + 1)
-    weights = np.exp(-0.5 * (x / sigma) ** 2)
-    weights = weights / weights.sum()
+    # Convert to pandas Series for rolling mean
+    import pandas as pd
+    df_temp = pd.DataFrame({'data': y})
+    smoothed = df_temp['data'].rolling(window=window, center=True, min_periods=1).mean()
     
-    # Apply smoothing with 'same' mode to keep original length
-    smoothed = np.convolve(y, weights, mode='same')
-    
-    return smoothed
+    return smoothed.values
 
-# Create smoothed versions of data for plotting
-smooth_window = 7  # Slightly larger window for smoother curves
-position_smooth = smooth_data(df["position"].values, smooth_window)
-error_smooth = smooth_data(df["error"].values, smooth_window)
-control_smooth = smooth_data(df["control"].values, smooth_window)
-p_smooth = smooth_data(df["P"].values, smooth_window)
-i_smooth = smooth_data(df["I"].values, smooth_window)
-d_smooth = smooth_data(df["D"].values, smooth_window)
+# Apply smoothing to data for visualization
+position_smooth = smooth_data(df["position"].values, window=3)
+error_smooth = smooth_data(df["error"].values, window=3)
+control_smooth = smooth_data(df["control"].values, window=3)
+p_smooth = smooth_data(df["P"].values, window=3)
+i_smooth = smooth_data(df["I"].values, window=3)
+d_smooth = smooth_data(df["D"].values, window=3)
 
 # Plot with separate subplots to handle different scales
 fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 10))
 
 # Position tracking
-ax1.plot(df["time"], position_smooth, label="Actual Position", linewidth=1.8, linestyle='-', marker=None, antialiased=True, color='blue')
-ax1.plot(df["time"], df["target"], label="Target Position", linestyle='--', linewidth=1.5, marker=None, antialiased=True)
+ax1.plot(df["time"], position_smooth, label="Actual Position", linewidth=2.0, linestyle='-', marker=None, antialiased=True, color='blue')
+ax1.plot(df["time"], df["target"], label="Target Position", linestyle='--', linewidth=1.8, marker=None, antialiased=True, color='red')
 ax1.set_xlabel("Time (s)")
 ax1.set_ylabel("Position (mm)")
-ax1.set_title("Position Tracking ")
+ax1.set_title("Position Tracking")
 ax1.legend()
 ax1.grid(True, alpha=0.2, linestyle='-', linewidth=0.5)
 
 # Error
-ax2.plot(df["time"], error_smooth, label="Error", color='red', linewidth=1.8, linestyle='-', marker=None, antialiased=True)
+ax2.plot(df["time"], error_smooth, label="Position Error", color='red', linewidth=2.0, linestyle='-', marker=None, antialiased=True)
+ax2.axhline(y=0, color='black', linestyle=':', alpha=0.5, linewidth=1)
 ax2.set_xlabel("Time (s)")
 ax2.set_ylabel("Error (mm)")
-ax2.set_title("Position Error ")
+ax2.set_title("Position Error")
 ax2.legend()
 ax2.grid(True, alpha=0.2, linestyle='-', linewidth=0.5)
 
 # PID Output (separate scale)
-ax3.plot(df["time"], control_smooth, label="PID Output", color='orange', linewidth=1.8, linestyle='-', marker=None, antialiased=True)
+ax3.plot(df["time"], control_smooth, label="PID Output", color='orange', linewidth=2.0, linestyle='-', marker=None, antialiased=True)
+ax3.axhline(y=0, color='black', linestyle=':', alpha=0.5, linewidth=1)
 ax3.set_xlabel("Time (s)")
 ax3.set_ylabel("PID Output")
-ax3.set_title("PID Control Output ")
+ax3.set_title("PID Control Output")
 ax3.legend()
 ax3.grid(True, alpha=0.2, linestyle='-', linewidth=0.5)
 
 # PID Terms
-ax4.plot(df["time"], p_smooth, label="P Term", alpha=1.0, linewidth=1.8, linestyle='-', marker=None, antialiased=True)
-ax4.plot(df["time"], i_smooth, label="I Term", alpha=1.0, linewidth=1.8, linestyle='-', marker=None, antialiased=True)
-ax4.plot(df["time"], d_smooth, label="D Term", alpha=1.0, linewidth=1.8, linestyle='-', marker=None, antialiased=True)
+ax4.plot(df["time"], p_smooth, label="P Term", alpha=1.0, linewidth=1.8, linestyle='-', marker=None, antialiased=True, color='green')
+ax4.plot(df["time"], i_smooth, label="I Term", alpha=1.0, linewidth=1.8, linestyle='-', marker=None, antialiased=True, color='blue')
+ax4.plot(df["time"], d_smooth, label="D Term", alpha=1.0, linewidth=1.8, linestyle='-', marker=None, antialiased=True, color='purple')
+ax4.axhline(y=0, color='black', linestyle=':', alpha=0.5, linewidth=1)
 ax4.set_xlabel("Time (s)")
 ax4.set_ylabel("PID Term Value")
-ax4.set_title("PID Terms ")
-ax4.legend()
+ax4.set_title("PID Terms")
+ax4.legend(fontsize=8)
 ax4.grid(True, alpha=0.2, linestyle='-', linewidth=0.5)
 plt.tight_layout()
 
@@ -389,12 +387,13 @@ print(f"Saved raw data: {csv_filename}")
 
 # --- Individual PID Terms Plot ---
 plt.figure(figsize=(12, 6))
-plt.plot(df["time"], p_smooth, label="P Term", linewidth=2.0, linestyle='-', marker=None, antialiased=True)
-plt.plot(df["time"], i_smooth, label="I Term", linewidth=2.0, linestyle='-', marker=None, antialiased=True)
-plt.plot(df["time"], d_smooth, label="D Term", linewidth=2.0, linestyle='-', marker=None, antialiased=True)
+plt.plot(df["time"], p_smooth, label="P Term", linewidth=2.0, linestyle='-', marker=None, antialiased=True, color='green')
+plt.plot(df["time"], i_smooth, label="I Term", linewidth=2.0, linestyle='-', marker=None, antialiased=True, color='blue')
+plt.plot(df["time"], d_smooth, label="D Term", linewidth=2.0, linestyle='-', marker=None, antialiased=True, color='purple')
+plt.axhline(y=0, color='black', linestyle=':', alpha=0.5, linewidth=1)
 plt.xlabel("Time (s)")
 plt.ylabel("PID Term Value")
-plt.title("PID Terms Over Time ")
+plt.title("PID Terms Over Time")
 plt.legend()
 plt.grid(True, alpha=0.2, linestyle='-', linewidth=0.5)
 plt.tight_layout()
