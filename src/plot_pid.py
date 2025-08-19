@@ -6,14 +6,6 @@ import os
 from datetime import datetime
 import numpy as np
 
-# Create a timestamp for unique filenames
-timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-save_dir = "PID_Analysis_Results"
-
-# Create directory if it doesn't exist
-if not os.path.exists(save_dir):
-    os.makedirs(save_dir)
-
 # Adjust this to match your Arduino COM port
 port = 'COM3'  # Update if needed
 baud = 9600
@@ -136,11 +128,6 @@ ax4.set_title("PID Terms")
 ax4.legend(fontsize=8)
 ax4.grid(True, alpha=0.2, linestyle='-', linewidth=0.5)
 plt.tight_layout()
-
-# Save the main analysis plot
-main_plot_filename = f"{save_dir}/PID_Analysis_{timestamp}.png"
-plt.savefig(main_plot_filename, dpi=300, bbox_inches='tight')
-print(f"Saved main analysis plot: {main_plot_filename}")
 plt.show()
 
 # Print some statistics to help debug
@@ -333,9 +320,7 @@ if performance_metrics['settling_times']:
 else:
     print("No significant step responses detected for dynamic analysis")
 
-# Save statistics to a text file
-stats_filename = f"{save_dir}/PID_Statistics_{timestamp}.txt"
-with open(stats_filename, 'w', encoding='utf-8') as f:
+# --- Individual PID Terms Plot ---
     f.write("=== PID Analysis Statistics ===\n")
     f.write(f"Test Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
     f.write(f"Duration: {duration} seconds\n")

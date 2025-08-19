@@ -40,7 +40,7 @@ uint8_t pendingR = 0, pendingG = 0, pendingB = 0; // Pending LED colors
 
 Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
 
-PIDController pid(1.0, 0.3, 0.05); // create your PID object with tunings
+PIDController pid(1.0, 0.8, 0.01); // create your PID object with tunings
 
 // error_a_max = 100mm
 // therefore Kp*e = 100 (as other terms are not aggressive)
@@ -122,6 +122,8 @@ void setup() {
   // Initialize timing variables
   startMillis = millis();
   lastPrintTime = startMillis - 1000; // Set lastPrintTime so first print happens immediately
+
+  pid.reset();
 }
 
 void loop() {
@@ -218,6 +220,8 @@ void loop() {
       analogWrite(L_PWM, 0);
       digitalWrite(R_EN, LOW);
       digitalWrite(L_EN, LOW);
+
+      pid.reset();
     }
 
 
