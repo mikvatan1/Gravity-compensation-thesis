@@ -57,6 +57,8 @@ const float ROTATION_MULTIPLIER = 1.0 / 4096.0; // Pre-calculated 1/4096
 
 
 unsigned long lastPrintTime = 0;
+unsigned long startMillis = 0;
+
 
 
 
@@ -112,20 +114,20 @@ void setup() {
   strip.begin();
   strip.setBrightness(LED_BRIGHTNESS);
   strip.show();
+  
+  // Initialize timing variables
+  startMillis = millis();
+  lastPrintTime = startMillis - 1000; // Set lastPrintTime so first print happens immediately
 }
 
 void loop() {
-
-  unsigned long loopStart = micros();
-
+  
   // Update LEDs if a change was requested
   if (ledUpdatePending) {
     setMotorStatusLEDs(pendingR, pendingG, pendingB);
     ledUpdatePending = false;
   }
     
-  // Read force
-  int rawADC = analogRead(LOAD_CELL);
   // Read position and calculate rotations
   int currentPosition = as5600.rawAngle();
   // Invert the angle to match your expected rotation direction
@@ -143,18 +145,16 @@ void loop() {
     previousPosition = currentPosition;
   }
   
-
+  // Read force with ADC optimization
   float force, a_target;
   if (!skipADC || firstADCRead) {
     int rawADC = analogRead(LOAD_CELL); 
-    //t4 = micros();
     force = rawADC * ADC_TO_FORCE;
     a_target = force * FORCE_TO_TARGET;
     lastForce = force;
     lastATarget = a_target;
     firstADCRead = false;
   } else {
-  //t4 = micros(); // No ADC read, so t4 = t3
     force = lastForce;
     a_target = lastATarget;
   }
@@ -207,23 +207,15 @@ void loop() {
 
 
   // Print every second
-  if (millis() - lastPrintTime >= 1000) {
-    /*
-    Serial.print("Force: ");
-    Serial.print(force, 2);
-    Serial.print(" | a_target: ");
-    Serial.print(a_target, 2);
-    Serial.print(" | a_actual: ");
-    Serial.print(a_actual, 2);
-    Serial.print(" | error_a: ");
-    Serial.print(error_a, 2);
-    Serial.print(" | rot_Counter: ");
-    Serial.print(rotationCounter, 2);
-    Serial.print(" | raw_angle: ");
-    Serial.print(currentPosition);
-    Serial.println();
-    */
-   
+  if (millis() - lastPrintTime > 1000) {
+    // Handle pending LED updates here (outside critical loop timing)
+    if (ledUpdatePending) {
+      setMotorStatusLEDs(pendingR, pendingG, pendingB);
+      ledUpdatePending = false;
+    }
+
+    
+    float timestamp = (millis() - startMillis) / 1000.0;
     float control = pid.getOutput();
     float p = pid.getPTerm();
     float i = pid.getITerm();
@@ -231,19 +223,19 @@ void loop() {
     float position = a_actual;
     float target = a_target;
 
-    // Print values space-separated (Arduino IDE Serial Plotter expects this)
-    Serial.print(p); Serial.print(" ");
-    Serial.print(i); Serial.print(" ");
-    Serial.print(d); Serial.print(" ");
-    Serial.println(control);
+    Serial.print(timestamp, 2); Serial.print(",");
+    Serial.print(error_a, 2); Serial.print(",");
+    Serial.print(control, 2); Serial.print(",");
+    Serial.print(position, 2); Serial.print(",");
+    Serial.print(target, 2); Serial.print(",");
+    Serial.print(p, 2); Serial.print(",");
+    Serial.print(i, 2); Serial.print(",");
+    Serial.println(d, 2);
     
-    
-    unsigned long loopTime = micros() - loopStart; 
-    Serial.print("Loop time (µs): ");
-    Serial.println(loopTime);
 
     lastPrintTime = millis();
   }
+
 }
 
 
