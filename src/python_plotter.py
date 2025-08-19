@@ -14,6 +14,10 @@ skip_first = 5
 skip_last = 2
 buffer_size = 2000
 
+# Constants from Arduino code for load calculation
+FORCE_TO_TARGET = 1.0 / (1.97 * 2)  # 1/(k_spring * num_springs) = 0.253807
+ADC_TO_LOAD = (5.0 / 1023.0) * 29.361  # From main.cpp
+
 # === Setup ===
 ser = serial.Serial(port, baudrate)
 ser.reset_input_buffer()  # Flush old junk from buffer
@@ -74,6 +78,9 @@ while True:
         i_vals.append(i)
         d_vals.append(d)
 
+        # Calculate current load from target position
+        current_load = target / (6.0 * FORCE_TO_TARGET) if target != 0 else 0.0
+
         # Main plot
         ax.clear()
         ax.plot(time_vals, error_vals, label='Error')
@@ -82,6 +89,7 @@ while True:
         ax.plot(time_vals, target_vals, label='Target')
         ax.set_xlabel("Time (s)")
         ax.set_ylabel("Values (mm, control output)")
+        ax.set_title(f"Position Tracking\nCurrent Load: {current_load:.2f} N ({current_load/9.81:.1f} kg)")
         ax.legend()
 
         # PID component plot
@@ -93,6 +101,7 @@ while True:
         ax.axhline(-25.5, color='black', linestyle=':', linewidth=1)
         ax_pid.set_xlabel("Time (s)")
         ax_pid.set_ylabel("PID Contributions")
+        ax_pid.set_title(f"PID Terms\nCurrent Load: {current_load:.2f} N ({current_load/9.81:.1f} kg)")
         ax_pid.legend()
 
         plt.pause(0.001)
