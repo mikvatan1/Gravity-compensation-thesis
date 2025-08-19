@@ -223,19 +223,25 @@ void loop() {
     Serial.print(currentPosition);
     Serial.println();
     */
-    float control = pid.compute(a_target, a_actual);
+   
+    float control = pid.getOutput();
+    float p = pid.getPTerm();
+    float i = pid.getITerm();
+    float d = pid.getDTerm();
+    float position = a_actual;
+    float target = a_target;
 
     // Print values space-separated (Arduino IDE Serial Plotter expects this)
-    Serial.print(pid.getPTerm()); Serial.print(" ");
-    Serial.print(pid.getITerm()); Serial.print(" ");
-    Serial.print(pid.getDTerm()); Serial.print(" ");
+    Serial.print(p); Serial.print(" ");
+    Serial.print(i); Serial.print(" ");
+    Serial.print(d); Serial.print(" ");
     Serial.println(control);
     
     
     unsigned long loopTime = micros() - loopStart; 
     Serial.print("Loop time (µs): ");
     Serial.println(loopTime);
-    
+
     lastPrintTime = millis();
   }
 }
