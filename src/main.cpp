@@ -121,7 +121,7 @@ void setup() {
 }
 
 void loop() {
-  
+
   // Update LEDs if a change was requested
   if (ledUpdatePending) {
     setMotorStatusLEDs(pendingR, pendingG, pendingB);
@@ -167,9 +167,8 @@ void loop() {
 
 
 
-  if (fabs(error_a) > 5) {  // Reduced deadband to 2mm for better precision
+  if (fabs(error_a) > 5) {  
 
-    // Enable motor driver
     digitalWrite(R_EN, HIGH);
     digitalWrite(L_EN, HIGH);
 
