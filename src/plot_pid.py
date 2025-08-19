@@ -19,8 +19,8 @@ port = 'COM3'  # Update if needed
 baud = 9600
 timeout = 0.1  # Reduced from 1 to 0.1 for faster sampling
 
-# How long to collect data (in seconds)
-duration = 20  
+# How long to collect data (in seconds) - updated to match Arduino's 10s limit
+duration = 15  # Give some buffer beyond the 10s Arduino runtime  
 
 ser = serial.Serial(port, baud, timeout=timeout)
 print("Reading data for", duration, "seconds... (optimized for high sample rate)")
@@ -32,6 +32,12 @@ sample_count = 0
 while (time.time() - start_time) < duration:
     try:
         line = ser.readline().decode('utf-8').strip()
+        
+        # Check for END signal from Arduino
+        if line == "END":
+            print("Arduino finished test - stopping data collection")
+            break
+            
         if line.count(",") == 7:  # Expecting 8 values
             values = list(map(float, line.split(",")))
             data.append(values)
@@ -52,8 +58,9 @@ while (time.time() - start_time) < duration:
 
 ser.close()
 
-print(f"\nData collection complete! Collected {len(data)} samples in {duration} seconds")
-print(f"Average sampling rate: {len(data)/duration:.1f} samples/sec")
+actual_duration = time.time() - start_time
+print(f"\nData collection complete! Collected {len(data)} samples in {actual_duration:.1f} seconds")
+print(f"Average sampling rate: {len(data)/actual_duration:.1f} samples/sec")
 
 if not data:
     print("No data received.")
@@ -63,6 +70,9 @@ if not data:
 columns = ["time", "error", "control", "position", "target", "P", "I", "D"]
 df = pd.DataFrame(data, columns=columns)
 
+# Filter to only show first 5 seconds
+df = df[df["time"] <= 5.0]
+print(f"Filtered data to first 5 seconds: {len(df)} samples remaining")
 
 # Apply simple smoothing to reduce noise
 def smooth_data(y, window=3):

@@ -124,8 +124,7 @@ void loop() {
 
   // Stop after 10 seconds
   if (millis() - startMillis > 10000) {
-    //Serial.println("Stopping after 10 seconds...");
-    //setStripColor(255, 255, 0); // Optional: set LED yellow to indicate stop
+    Serial.println("END");  // Signal to Python plotter that test is complete
     analogWrite(R_PWM, 0);
     analogWrite(L_PWM, 0);
     digitalWrite(R_EN, LOW);
@@ -133,7 +132,6 @@ void loop() {
     while (true) {
       //stop the loop
     }
-
   }
 
   // Update LEDs if a change was requested
