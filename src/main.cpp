@@ -1,7 +1,8 @@
-
+#include <Arduino.h>
 #include <Wire.h>
-#include <AS5600.h>
 #include <math.h>
+#include <AS5600.h> 
+#include "PIDController.h"
 #include <Adafruit_NeoPixel.h>
 
 #define LOAD_CELL A0
@@ -16,8 +17,6 @@
 #define LED_PIN 4           // Data pin for WS2812B (connect to DIN of the strip)
 #define NUM_LEDS 144        // Number of LEDs on the strip (adjust to your strip)
 #define LED_BRIGHTNESS 5    // Brightness of the strip
-
-
 
 
 // Rotation tracking
@@ -209,7 +208,7 @@ void loop() {
 
   // Print every second
   if (millis() - lastPrintTime >= 1000) {
-    
+    /*
     Serial.print("Force: ");
     Serial.print(force, 2);
     Serial.print(" | a_target: ");
@@ -232,7 +231,7 @@ void loop() {
     Serial.print(pid.getDTerm()); Serial.print(" ");
     Serial.println(control);
     
-    
+    */
     unsigned long loopTime = micros() - loopStart; 
     Serial.print("Loop time (µs): ");
     Serial.println(loopTime);
