@@ -63,8 +63,6 @@ if not data:
 columns = ["time", "error", "control", "position", "target", "P", "I", "D"]
 df = pd.DataFrame(data, columns=columns)
 
-# Filter to only show first 5 seconds
-df = df[df["time"] <= 5.0]
 
 # Apply simple smoothing to reduce noise
 def smooth_data(y, window=3):

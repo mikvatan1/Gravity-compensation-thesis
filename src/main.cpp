@@ -122,6 +122,20 @@ void setup() {
 
 void loop() {
 
+  // Stop after 10 seconds
+  if (millis() - startMillis > 10000) {
+    //Serial.println("Stopping after 10 seconds...");
+    //setStripColor(255, 255, 0); // Optional: set LED yellow to indicate stop
+    analogWrite(R_PWM, 0);
+    analogWrite(L_PWM, 0);
+    digitalWrite(R_EN, LOW);
+    digitalWrite(L_EN, LOW);
+    while (true) {
+      //stop the loop
+    }
+
+  }
+
   // Update LEDs if a change was requested
   if (ledUpdatePending) {
     setMotorStatusLEDs(pendingR, pendingG, pendingB);
