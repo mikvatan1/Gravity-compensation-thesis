@@ -71,7 +71,7 @@ columns = ["time", "error", "control", "position", "target", "P", "I", "D"]
 df = pd.DataFrame(data, columns=columns)
 
 # Filter to only show first 5 seconds
-df = df[df["time"] <= 5.0]
+df = df[df["time"] <= 10.0]
 print(f"Filtered data to first 5 seconds: {len(df)} samples remaining")
 
 # Apply simple smoothing to reduce noise

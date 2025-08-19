@@ -40,7 +40,11 @@ uint8_t pendingR = 0, pendingG = 0, pendingB = 0; // Pending LED colors
 
 Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
 
-PIDController pid(1.0, 0.1, 0.05); // create your PID object with tunings
+PIDController pid(1.0, 0.3, 0.05); // create your PID object with tunings
+
+// error_a_max = 100mm
+// therefore Kp*e = 100 (as other terms are not aggressive)
+// when Ki*(int_e) =
 
 AS5600 as5600;
 
@@ -217,8 +221,8 @@ void loop() {
     }
 
 
-  // Print every second
-  if (millis() - lastPrintTime > 1000) {
+  // Print every 10 milliseconds
+  if (millis() - lastPrintTime > 10) {
     // Handle pending LED updates here (outside critical loop timing)
     if (ledUpdatePending) {
       setMotorStatusLEDs(pendingR, pendingG, pendingB);

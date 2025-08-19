@@ -1,0 +1,32 @@
+=== PID Analysis Statistics ===
+Test Date: 2025-08-19 14:32:27
+Duration: 15 seconds
+Data Points: 213 samples
+
+=== Basic Statistics ===
+PID Output - Min: 9.15, Max: 47.52, Mean: 22.93
+P Term - Min: 5.01, Max: 32.52, Mean: 7.99
+I Term - Min: 2.03, Max: 15.00, Mean: 14.94
+D Term - Min: -0.15, Max: 0.34, Mean: 0.00
+Error - Min: 1.12, Max: 32.52, Mean: 5.30
+
+=== Performance Metrics ===
+RMSE (Root Mean Square Error): 9.149 mm
+MAE (Mean Absolute Error): 5.296 mm
+Maximum Absolute Error: 32.520 mm
+Error Standard Deviation: 7.460 mm
+
+=== Dynamic Response Metrics ===
+Average Settling Time: 4.638 s
+Settling Times: ['4.630', '4.590', '4.670', '4.750', '4.550'] s
+Average Overshoot: 38.4 %
+Overshoots: ['11.8', '477.4', '183.9', '31.5', '23.4', '2.2', '0.0', '0.0', '0.0', '0.0', '0.0', '0.0', '0.0', '0.0', '0.0', '0.0', '0.0', '0.0', '0.0'] %
+Average Rise Time: 1.165 s
+Rise Times: ['1.620', '0.100', '0.440', '1.230', '1.280', '1.570', '1.580', '1.670', '1.480', '1.520', '1.330', '1.130', '0.930', '0.430'] s
+Average Steady-State Error: 1.962 mm
+Steady-State Errors: ['1.968', '1.979', '1.968', '1.968', '1.957', '1.968', '1.957', '1.968', '1.946', '1.946', '1.979', '1.979', '1.957', '2.012', '1.953', '1.953', '1.951', '1.951', '1.911'] mm
+
+=== PID Tuning Assessment ===
+[WARNING] Consider improving accuracy (RMSE > 1mm)
+[WARNING] High overshoot - consider reducing Kp or adding Kd
+[WARNING] Slow settling - consider increasing Kp or Ki
