@@ -145,8 +145,7 @@ void setup() {
 
 void loop() {
 
-  unsigned long loopStart = millis();
-  unsigned long t1, t2, t3, t4, t5, t6, t7, t8; // Timing markers
+  unsigned long loopStart = micros(); // Changed to micros() for consistency
 
   // Stop after 10 seconds
   if (millis() - startMillis > 10000) {
@@ -160,15 +159,12 @@ void loop() {
     }
   }
 
-  t1 = micros(); // After timeout check
-
   // Update LEDs if a change was requested
   if (ledUpdatePending) {
     setMotorStatusLEDs(pendingR, pendingG, pendingB);
     ledUpdatePending = false;
   }
 
-  t2 = micros(); // After LED update
     
   // Read position and calculate rotations
   int currentPosition = as5600.rawAngle();
@@ -187,7 +183,6 @@ void loop() {
     previousPosition = currentPosition;
   }
 
-  t3 = micros(); // After position reading
   
   // Read force with ADC optimization and filtering
   float force, a_target;
@@ -214,14 +209,9 @@ void loop() {
   }
   skipADC = !skipADC; // Toggle for next loop
 
-  t4 = micros(); // After force reading
   
   float a_actual = a_start + (rotationCounter * spoed);
   float error_a = a_target - a_actual;
-
-  t5 = micros(); // After calculations
-
-
 
 
 
@@ -239,7 +229,7 @@ void loop() {
     float output = pid.compute(a_target, a_actual); // PID calculation 
     int pwm = constrain(abs(output), 50, 100); // Reduced PWM range for smoother operation
 
-    t6 = micros(); // After PID computation
+
 
     if (error_a > 5) {  
       analogWrite(R_PWM, pwm); // R_PWM = clockwise (a_actual goes up)
@@ -266,7 +256,6 @@ void loop() {
       pid.reset();
     }
 
-  t7 = micros(); // After motor control
 
 
   // Print every 50 milliseconds (was 10ms - 5x less frequent)
@@ -276,8 +265,7 @@ void loop() {
       setMotorStatusLEDs(pendingR, pendingG, pendingB);
       ledUpdatePending = false;
     }
-
-    t8 = micros(); // After final LED update
+    
     
     float timestamp = (millis() - startMillis) / 1000.0;
     float control = pid.getOutput();
@@ -287,7 +275,6 @@ void loop() {
     float position = a_actual;
     float target = a_target;
 
-    unsigned long serialStart = micros(); // Time before serial printing
     Serial.print(timestamp, 1); Serial.print(",");  // Reduced precision 2->1
     Serial.print(error_a, 1); Serial.print(",");    // Reduced precision 2->1
     Serial.print(control, 1); Serial.print(",");    // Reduced precision 2->1
@@ -296,28 +283,13 @@ void loop() {
     Serial.print(p, 1); Serial.print(",");          // Reduced precision 2->1
     Serial.print(i, 1); Serial.print(",");          // Reduced precision 2->1
     Serial.println(d, 1);                           // Reduced precision 2->1
-    unsigned long serialEnd = micros(); // Time after serial printing
-    
-    // Print timing breakdown (every 5 prints to avoid flooding)
-    static int printCounter = 0;
-    printCounter++;
-    if (printCounter >= 5) {
-      unsigned long totalLoopTime = serialEnd - loopStart;
-      unsigned long serialTime = serialEnd - serialStart;
-      Serial.print("TIMING(us): Total="); Serial.print(totalLoopTime);
-      Serial.print(" LED1="); Serial.print(t2-t1);
-      Serial.print(" POS="); Serial.print(t3-t2);
-      Serial.print(" ADC="); Serial.print(t4-t3);
-      Serial.print(" CALC="); Serial.print(t5-t4);
-      Serial.print(" PID="); Serial.print(t6-t5);
-      Serial.print(" MOTOR="); Serial.print(t7-t6);
-      Serial.print(" LED2="); Serial.print(t8-t7);
-      Serial.print(" SERIAL="); Serial.print(serialTime);
-      Serial.println();
-      printCounter = 0;
-    }
+
 
     lastPrintTime = millis();
+    unsigned long loopDuration = micros() - loopStart;
+    Serial.print("Looptime:");
+    Serial.print(loopDuration);
+    Serial.println(" us");
   }
 
 }
