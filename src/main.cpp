@@ -285,11 +285,12 @@ void loop() {
     Serial.println(d, 1);                           // Reduced precision 2->1
 
 
-    lastPrintTime = millis();
+    
     unsigned long loopDuration = micros() - loopStart;
     Serial.print("Looptime:");
     Serial.print(loopDuration);
     Serial.println(" us");
+    lastPrintTime = millis();
   }
 
 }
