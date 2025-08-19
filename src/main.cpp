@@ -274,8 +274,9 @@ if (millis() - lastTimingPrint > 1000) {
   Serial.print(" | AS5600 RAW: "); Serial.print(currentPosition);
   Serial.print(" | ROT_COUNTER: "); Serial.print(rotationCounter, 3);
   Serial.println();
-  lastTimingPrint = millis();
   */
+  lastTimingPrint = millis();
+
   Serial.print("Force: ");
   Serial.print(force, 2);
   Serial.print(" | a_target: ");
