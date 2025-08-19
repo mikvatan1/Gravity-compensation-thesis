@@ -31,6 +31,11 @@ static float lastForce = 0.0;
 static float lastATarget = 0.0;
 static bool firstADCRead = true;
 
+// Force filtering variables
+static float filteredForce = 0.0;
+static bool firstForceRead = true;
+const float FORCE_FILTER_ALPHA = 0.2; // Lower = more filtering, 0.1-0.3 is good range
+
 bool running = false;
 bool lastMotorState = false; // Track motor state for LED updates
 int currentMotorDirection = 0; // Track motor direction: 1=R_PWM(CW), -1=L_PWM(CCW), 0=stopped
@@ -40,7 +45,7 @@ uint8_t pendingR = 0, pendingG = 0, pendingB = 0; // Pending LED colors
 
 Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
 
-PIDController pid(1.0, 0.8, 0.01); // create your PID object with tunings
+PIDController pid(1.0, 0.7, 0.01); 
 
 // error_a_max = 100mm
 // therefore Kp*e = 100 (as other terms are not aggressive)
@@ -93,7 +98,7 @@ void requestMotorStatusLEDs(uint8_t r, uint8_t g, uint8_t b) {
 }
 
 
-
+//// setup ////
 
 
 void setup() {
@@ -125,6 +130,16 @@ void setup() {
 
   pid.reset();
 }
+
+
+
+
+
+
+//// Loop ////
+
+
+
 
 void loop() {
 
@@ -163,11 +178,21 @@ void loop() {
     previousPosition = currentPosition;
   }
   
-  // Read force with ADC optimization
+  // Read force with ADC optimization and filtering
   float force, a_target;
   if (!skipADC || firstADCRead) {
     int rawADC = analogRead(LOAD_CELL); 
-    force = rawADC * ADC_TO_FORCE;
+    float rawForce = rawADC * ADC_TO_FORCE;
+    
+    // Apply exponential moving average filter to reduce noise
+    if (firstForceRead) {
+      filteredForce = rawForce; // Initialize with first reading
+      firstForceRead = false;
+    } else {
+      filteredForce = (FORCE_FILTER_ALPHA * rawForce) + ((1.0 - FORCE_FILTER_ALPHA) * filteredForce);
+    }
+    
+    force = filteredForce;
     a_target = force * FORCE_TO_TARGET;
     lastForce = force;
     lastATarget = a_target;
