@@ -222,7 +222,7 @@ void loop() {
     Serial.print(" | raw_angle: ");
     Serial.print(currentPosition);
     Serial.println();
-
+    */
     float control = pid.compute(a_target, a_actual);
 
     // Print values space-separated (Arduino IDE Serial Plotter expects this)
@@ -231,7 +231,7 @@ void loop() {
     Serial.print(pid.getDTerm()); Serial.print(" ");
     Serial.println(control);
     
-    */
+    
     unsigned long loopTime = micros() - loopStart; 
     Serial.print("Loop time (µs): ");
     Serial.println(loopTime);
