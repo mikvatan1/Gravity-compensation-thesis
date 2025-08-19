@@ -18,6 +18,8 @@ private:
     float Kp, Ki, Kd;
     float integral;
     float lastError;
+    unsigned long lastTime;  // For proper derivative calculation
+    float lastDerivative;    // For derivative filtering
 
     // New: Store internal components
     float pTerm;
