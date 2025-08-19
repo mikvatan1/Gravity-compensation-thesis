@@ -103,22 +103,25 @@ void requestMotorStatusLEDs(uint8_t r, uint8_t g, uint8_t b) {
 
 
 void setup() {
+  // FIRST PRIORITY: Disable motor driver immediately to prevent startup movement
+  // Set pins as outputs and immediately disable them
+  pinMode(R_EN, OUTPUT);
+  pinMode(L_EN, OUTPUT);
+  digitalWrite(R_EN, LOW);    // Disable right motor driver
+  digitalWrite(L_EN, LOW);    // Disable left motor driver
+  
+  pinMode(R_PWM, OUTPUT);
+  pinMode(L_PWM, OUTPUT);
+  analogWrite(R_PWM, 0);      // Ensure PWM is 0
+  analogWrite(L_PWM, 0);      // Ensure PWM is 0
+  
+  // Small delay to ensure motor drivers are fully disabled
+  delay(100);
+  
   Serial.begin(9600);
   Wire.begin();
   as5600.begin(4);
   as5600.setDirection(AS5600_CLOCK_WISE);
-  
-    // Motor driver pins as output - DISABLE FIRST to prevent startup motor movement
-  pinMode(R_PWM, OUTPUT);
-  pinMode(L_PWM, OUTPUT);
-  pinMode(R_EN, OUTPUT);
-  pinMode(L_EN, OUTPUT);
-  
-  // Immediately disable motor to prevent startup movement
-  analogWrite(R_PWM, 0);
-  analogWrite(L_PWM, 0);
-  digitalWrite(R_EN, LOW);
-  digitalWrite(L_EN, LOW);
 
 
   // Led strip initialization
@@ -145,7 +148,7 @@ void setup() {
 
 void loop() {
 
-  unsigned long loopStart = micros(); // Changed to micros() for consistency
+  unsigned long loopStart = millis(); // Changed to millis() for consistency
 
   // Stop after 10 seconds
   if (millis() - startMillis > 10000) {
@@ -257,15 +260,14 @@ void loop() {
     }
 
 
-
-  // Print every 50 milliseconds (was 10ms - 5x less frequent)
-  if (millis() - lastPrintTime > 50) {
+  // Print every 10 milliseconds
+  if (millis() - lastPrintTime > 10) {
     // Handle pending LED updates here (outside critical loop timing)
     if (ledUpdatePending) {
       setMotorStatusLEDs(pendingR, pendingG, pendingB);
       ledUpdatePending = false;
     }
-    
+
     
     float timestamp = (millis() - startMillis) / 1000.0;
     float control = pid.getOutput();
@@ -275,24 +277,21 @@ void loop() {
     float position = a_actual;
     float target = a_target;
 
-    Serial.print(timestamp, 1); Serial.print(",");  // Reduced precision 2->1
-    Serial.print(error_a, 1); Serial.print(",");    // Reduced precision 2->1
-    Serial.print(control, 1); Serial.print(",");    // Reduced precision 2->1
-    Serial.print(position, 1); Serial.print(",");   // Reduced precision 2->1
-    Serial.print(target, 1); Serial.print(",");     // Reduced precision 2->1
-    Serial.print(p, 1); Serial.print(",");          // Reduced precision 2->1
-    Serial.print(i, 1); Serial.print(",");          // Reduced precision 2->1
-    Serial.println(d, 1);                           // Reduced precision 2->1
+    Serial.print(timestamp, 1); Serial.print(",");
+    Serial.print(error_a, 1); Serial.print(",");
+    Serial.print(control, 1); Serial.print(",");
+    Serial.print(position, 1); Serial.print(",");
+    Serial.print(target, 1); Serial.print(",");
+    Serial.print(p, 1); Serial.print(",");
+    Serial.print(i, 1); Serial.print(",");
+    Serial.println(d, 1);
 
+    lastPrintTime = millis();
 
-    
-    unsigned long loopDuration = micros() - loopStart;
+    unsigned long loopDuration = lastPrintTime - loopStart;
     Serial.print("Looptime:");
     Serial.print(loopDuration);
-    Serial.println(" us");
-    lastPrintTime = millis();
+    Serial.println(" ms");
   }
 
 }
-
-
