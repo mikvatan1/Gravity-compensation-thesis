@@ -25,6 +25,11 @@ int previousPosition = 0;
 long totalRotation = 0;
 float rotationCounter = 0.0;
 
+// PID reset delay variables
+static unsigned long timeInDeadband = 0;
+static bool inDeadband = false;
+const unsigned long RESET_DELAY_MS = 2000; // Wait 2 seconds before resetting PID
+
 static bool skipADC = false;
 static float lastForce = 0.0;
 static float lastATarget = 0.0;
@@ -246,6 +251,8 @@ void loop() {
     }
 
   } else { 
+      // System is in deadband (error < 5mm)
+      
       // Update LEDs only on state change - motor stopped (GREEN)
       if (lastMotorState) {
         requestMotorStatusLEDs(0, 255, 0); // Request green LEDs (non-blocking)
@@ -257,12 +264,27 @@ void loop() {
       digitalWrite(R_EN, LOW);
       digitalWrite(L_EN, LOW);
 
-      pid.reset();
+      // Delayed PID reset logic
+      if (!inDeadband) {
+        // Just entered deadband - start the timer
+        timeInDeadband = millis();
+        inDeadband = true;
+      } else {
+        // Check if we've been in deadband long enough
+        if (millis() - timeInDeadband > RESET_DELAY_MS) {
+          pid.reset(); // Reset after delay
+          timeInDeadband = millis(); // Reset timer to prevent repeated resets
+        }
+      }
     }
 
+  // Reset deadband tracking if we exit the deadband
+  if (fabs(error_a) > 5 && inDeadband) {
+    inDeadband = false;
+  }
 
-  // Print every 50 milliseconds
-  if (millis() - lastPrintTime > 50) {
+  // Print every 100 milliseconds
+  if (millis() - lastPrintTime > 100) {
     // Handle pending LED updates here (outside critical loop timing)
     if (ledUpdatePending) {
       setMotorStatusLEDs(pendingR, pendingG, pendingB);
@@ -278,7 +300,7 @@ void loop() {
     float position = a_actual;
     float target = a_target;
 
-    // Single print statement - much faster than multiple Serial.print() calls
+    // Optimized serial output - fewer function calls
     Serial.print(timestamp, 1); Serial.print(",");
     Serial.print(error_a, 1); Serial.print(",");
     Serial.print(control, 1); Serial.print(",");

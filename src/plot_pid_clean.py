@@ -3,6 +3,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import time
 import numpy as np
+import os
+from datetime import datetime
 
 # Adjust this to match your Arduino COM port
 port = 'COM3'  # Update if needed
@@ -59,15 +61,12 @@ FORCE_TO_TARGET = 1.0 / (1.97 * 2)  # 1/(k_spring * num_springs) = 0.253807
 ADC_TO_LOAD = (5.0 / 1023.0) * 29.361  # From main.cpp
 
 # Calculate current load from target position
-# The Arduino uses: force = load * 6, then target = force * FORCE_TO_TARGET
-# So: target = (load * 6) * FORCE_TO_TARGET
-# Therefore: load = target / (6 * FORCE_TO_TARGET)
 current_load = df["target"].mean() / (6.0 * FORCE_TO_TARGET) if len(df) > 0 else 0.0
 print(f"Detected Load: {current_load:.2f} N ({current_load/9.81:.1f} kg)")
 
-# Apply simple smoothing to reduce noise
-def smooth_data(y, window=3):
-    """Apply simple moving average to smooth the data"""
+# Apply enhanced smoothing for ultra-smooth lines
+def smooth_data(y, window=7):
+    """Apply moving average with larger window for smoother lines"""
     if len(y) < window:
         return y
     
@@ -75,59 +74,67 @@ def smooth_data(y, window=3):
     smoothed = df_temp['data'].rolling(window=window, center=True, min_periods=1).mean()
     return smoothed.values
 
-# Apply smoothing to data for visualization
-position_smooth = smooth_data(df["position"].values, window=3)
-error_smooth = smooth_data(df["error"].values, window=3)
-control_smooth = smooth_data(df["control"].values, window=3)
-p_smooth = smooth_data(df["P"].values, window=3)
-i_smooth = smooth_data(df["I"].values, window=3)
-d_smooth = smooth_data(df["D"].values, window=3)
+# Apply smoothing to all data
+position_smooth = smooth_data(df["position"].values, window=7)
+error_smooth = smooth_data(df["error"].values, window=7)
+control_smooth = smooth_data(df["control"].values, window=7)
+target_smooth = smooth_data(df["target"].values, window=7)
+p_smooth = smooth_data(df["P"].values, window=7)
+i_smooth = smooth_data(df["I"].values, window=7)
+d_smooth = smooth_data(df["D"].values, window=7)
 
-# Create plots with separate subplots
-fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 10))
+# Create plots with smooth lines - 2 graphs: Combined signals + PID terms
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8))
 
-# Position tracking
-ax1.plot(df["time"], position_smooth, label="Actual Position", linewidth=2.0, color='blue')
-ax1.plot(df["time"], df["target"], label="Target Position", linestyle='--', linewidth=1.8, color='red')
+# Combined plot: Position, Target, Error, and Control Output
+ax1.plot(df["time"], position_smooth, label="Actual Position", linewidth=2.5, color='blue', alpha=0.8)
+ax1.plot(df["time"], target_smooth, label="Target Position", linestyle='-', linewidth=2.0, color='red', alpha=0.8)
+ax1.plot(df["time"], error_smooth, label="Position Error", linewidth=2.0, color='orange', alpha=0.8)
+ax1.plot(df["time"], control_smooth, label="PID Output", linewidth=2.0, color='green', alpha=0.8)
+ax1.axhline(y=0, color='black', linestyle=':', alpha=0.5)
 ax1.set_xlabel("Time (s)")
-ax1.set_ylabel("Position (mm)")
-ax1.set_title(f"Position Tracking\nDetected Load: {current_load:.2f} N ({current_load/9.81:.1f} kg)")
+ax1.set_ylabel("Values (mm / control units)")
+ax1.set_title(f"System Response\nDetected Load: {current_load:.2f} N ({current_load/9.81:.1f} kg)")
 ax1.legend()
-ax1.grid(True, alpha=0.2)
+ax1.grid(True, alpha=0.3)
 
-# Error
-ax2.plot(df["time"], error_smooth, label="Position Error", color='red', linewidth=2.0)
+# PID Terms with smooth lines
+ax2.plot(df["time"], p_smooth, label="P Term", linewidth=2.5, color='green', alpha=0.8)
+ax2.plot(df["time"], i_smooth, label="I Term", linewidth=2.5, color='blue', alpha=0.8)
+ax2.plot(df["time"], d_smooth, label="D Term", linewidth=2.5, color='purple', alpha=0.8)
 ax2.axhline(y=0, color='black', linestyle=':', alpha=0.5)
 ax2.set_xlabel("Time (s)")
-ax2.set_ylabel("Error (mm)")
-ax2.set_title(f"Position Error\nDetected Load: {current_load:.2f} N ({current_load/9.81:.1f} kg)")
+ax2.set_ylabel("PID Term Value")
+ax2.set_title(f"PID Terms\nDetected Load: {current_load:.2f} N ({current_load/9.81:.1f} kg)")
 ax2.legend()
-ax2.grid(True, alpha=0.2)
-
-# PID Output
-ax3.plot(df["time"], control_smooth, label="PID Output", color='orange', linewidth=2.0)
-ax3.axhline(y=0, color='black', linestyle=':', alpha=0.5)
-ax3.set_xlabel("Time (s)")
-ax3.set_ylabel("PID Output")
-ax3.set_title(f"PID Control Output\nDetected Load: {current_load:.2f} N ({current_load/9.81:.1f} kg)")
-ax3.legend()
-ax3.grid(True, alpha=0.2)
-
-# PID Terms
-ax4.plot(df["time"], p_smooth, label="P Term", linewidth=1.8, color='green')
-ax4.plot(df["time"], i_smooth, label="I Term", linewidth=1.8, color='blue')
-ax4.plot(df["time"], d_smooth, label="D Term", linewidth=1.8, color='purple')
-ax4.axhline(y=0, color='black', linestyle=':', alpha=0.5)
-ax4.set_xlabel("Time (s)")
-ax4.set_ylabel("PID Term Value")
-ax4.set_title(f"PID Terms\nDetected Load: {current_load:.2f} N ({current_load/9.81:.1f} kg)")
-ax4.legend()
-ax4.grid(True, alpha=0.2)
+ax2.grid(True, alpha=0.3)
 
 plt.tight_layout()
+
+# Create PID_graphs folder if it doesn't exist
+graphs_folder = "PID_graphs"
+if not os.path.exists(graphs_folder):
+    os.makedirs(graphs_folder)
+    print(f"Created folder: {graphs_folder}")
+
+# Generate filename with timestamp and load info
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+load_kg = current_load / 9.81
+filename = f"PID_analysis_{timestamp}_Load_{load_kg:.1f}kg.png"
+filepath = os.path.join(graphs_folder, filename)
+
+# Save the figure
+plt.savefig(filepath, dpi=300, bbox_inches='tight', facecolor='white')
+print(f"✓ Graph saved to: {filepath}")
+
 plt.show()
 
-# Individual PID Terms Plot
+print("\n=== Final Values ===")
+print(f"Final Error: {df['error'].iloc[-1]:.3f} mm")
+print(f"Final Position: {df['position'].iloc[-1]:.3f} mm")
+print(f"Final Target: {df['target'].iloc[-1]:.3f} mm")
+print(f"Mean Absolute Error: {abs(df['error']).mean():.3f} mm")
+print(f"Position Standard Deviation: {df['position'].std():.3f} mm")
 plt.figure(figsize=(12, 6))
 plt.plot(df["time"], p_smooth, label="P Term", linewidth=2.0, color='green')
 plt.plot(df["time"], i_smooth, label="I Term", linewidth=2.0, color='blue')
