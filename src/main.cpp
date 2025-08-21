@@ -50,22 +50,25 @@ uint8_t pendingR = 0, pendingG = 0, pendingB = 0; // Pending LED colors
 
 Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
 
-PIDController pid(1.0, 0.7, 0.10); 
+PIDController pid(4.0, 0.7, 0.10); 
 
-// error_a_max = 100mm
-// therefore Kp*e = 100 (as other terms are not aggressive)
-// when Ki*(int_e) =
+// a_max = 150mm a_min 95mm
+// error a_max = 55mm
+// pwm range: 100-200
+//
+// therefore Kp*e_max should be 200 at start
+// Kp = 3, e_max is 55mm
 
 AS5600 as5600;
 
 float k_spring = 1.97; // [N/mm]
 float num_springs = 2; // Number of springs used
 float spoed = 2.0; // [mm] per rotation
-float a_start = 0; // [mm] Manually set start value of a, corresponds to the actual start position of the device
+float a_start = 95.0; // [mm] Start value, only set at startup
 float a_target = 0; // [mm] Starting value of a
 float angle = 0.0; 
 float own_weight = 2.0; // [kg]
-float own_force = own_weight * 9.81; // [N]
+float own_force = own_weight * 9.81*6; // [N] at intersection
 
 const float ADC_TO_FORCE = ((5.0 / 1023.0) * 29.361 * 6); // Combined: voltage conversion * calibration * total force multiplier
 const float ADC_TO_LOAD = ((5.0 / 1023.0) * 29.361);
@@ -158,7 +161,7 @@ void loop() {
   unsigned long loopStart = millis(); // Changed to millis() for consistency
 
   // Stop after 10 seconds
-  if (millis() - startMillis > 10000) {
+  if (millis() - startMillis > 20000) {
     Serial.println("END");  // Signal to Python plotter that test is complete
     analogWrite(R_PWM, 0);
     analogWrite(L_PWM, 0);
@@ -199,7 +202,7 @@ void loop() {
   if (!skipADC || firstADCRead) { 
     int rawADC = analogRead(LOAD_CELL); 
     detectedLoad = rawADC * ADC_TO_LOAD; // top load [N]
-    float rawForce = (rawADC * ADC_TO_FORCE) + own_force; 
+    float rawForce = (rawADC * ADC_TO_FORCE) + own_force; // (raw load cell value + own weight) * conversion = total force at intersection
     
     // Apply exponential moving average filter to reduce noise
     if (firstForceRead) {
@@ -209,8 +212,8 @@ void loop() {
       filteredForce = (FORCE_FILTER_ALPHA * rawForce) + ((1.0 - FORCE_FILTER_ALPHA) * filteredForce);
     }
     
-    force = filteredForce;
-    a_target = force * FORCE_TO_TARGET;
+    force = filteredForce; // total force at intersection (top load and own weight at intersection)
+    a_target = force * FORCE_TO_TARGET; // a = F/k
     lastForce = force;
     lastATarget = a_target;
     lastDetectedLoad = detectedLoad;
@@ -228,8 +231,7 @@ void loop() {
 
 
 
-  if (fabs(error_a) > 5) {  
-
+  if (fabs(error_a) > 5) {
     digitalWrite(R_EN, HIGH);
     digitalWrite(L_EN, HIGH);
 
@@ -240,47 +242,43 @@ void loop() {
     }
 
     float output = pid.compute(a_target, a_actual); // PID calculation 
-    int pwm = constrain(abs(output), 50, 100); // Reduced PWM range for smoother operation
-
-
+    int pwm = constrain(abs(output), 100, 200); // Reduced PWM range for smoother operation
 
     if (error_a > 5) {  
       analogWrite(R_PWM, pwm); // R_PWM = clockwise (a_actual goes up)
       analogWrite(L_PWM, 0);
-
     } else if (error_a < -5) { 
       analogWrite(R_PWM, 0);
       analogWrite(L_PWM, pwm); // L_PWM = counter-clockwise (a_actual goes down)
-
     }
 
-  } else { 
-      // System is in deadband (error < 5mm)
-      
-      // Update LEDs only on state change - motor stopped (GREEN)
-      if (lastMotorState) {
-        requestMotorStatusLEDs(0, 255, 0); // Request green LEDs (non-blocking)
-        lastMotorState = false;
-      }
+  } else {
+    // System is in deadband (error < 5mm)
 
-      analogWrite(R_PWM, 0);
-      analogWrite(L_PWM, 0);
-      digitalWrite(R_EN, LOW);
-      digitalWrite(L_EN, LOW);
+    // Update LEDs only on state change - motor stopped (GREEN)
+    if (lastMotorState) {
+      requestMotorStatusLEDs(0, 255, 0); // Request green LEDs (non-blocking)
+      lastMotorState = false;
+    }
 
-      // Delayed PID reset logic
-      if (!inDeadband) {
-        // Just entered deadband - start the timer
-        timeInDeadband = millis();
-        inDeadband = true;
-      } else {
-        // Check if we've been in deadband long enough
-        if (millis() - timeInDeadband > RESET_DELAY_MS) {
-          pid.reset(); // Reset after delay
-          timeInDeadband = millis(); // Reset timer to prevent repeated resets
-        }
+    analogWrite(R_PWM, 0);
+    analogWrite(L_PWM, 0);
+    digitalWrite(R_EN, LOW);
+    digitalWrite(L_EN, LOW);
+
+    // Delayed PID reset logic
+    if (!inDeadband) {
+      // Just entered deadband - start the timer
+      timeInDeadband = millis();
+      inDeadband = true;
+    } else {
+      // Check if we've been in deadband long enough
+      if (millis() - timeInDeadband > RESET_DELAY_MS) {
+        pid.reset(); // Reset after delay
+        timeInDeadband = millis(); // Reset timer to prevent repeated resets
       }
     }
+  }
 
   // Reset deadband tracking if we exit the deadband
   if (fabs(error_a) > 5 && inDeadband) {
@@ -318,9 +316,17 @@ void loop() {
     lastPrintTime = millis();
     
     unsigned long loopDuration = lastPrintTime - loopStart;
+
+    Serial.print("a_target:");
+    Serial.print(a_target);
+    Serial.print("a_actual:");
+    Serial.print(a_actual);
+    Serial.print("Detected_load:");
+    Serial.print(detectedLoad/9.81);
     Serial.print("Looptime:");
     Serial.print(loopDuration);
     Serial.println(" ms");
+
     
     
   }
