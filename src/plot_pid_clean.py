@@ -30,7 +30,7 @@ while (time.time() - start_time) < duration:
             print("Arduino finished test - stopping data collection")
             break
             
-        if line.count(",") == 7:  # Expecting 8 values
+        if line.count(",") == 8:  # Expecting 9 values now (added detectedLoad)
             values = list(map(float, line.split(",")))
             data.append(values)
             sample_count += 1
@@ -49,7 +49,7 @@ if not data:
     exit()
 
 # Create DataFrame
-columns = ["time", "error", "control", "position", "target", "P", "I", "D"]
+columns = ["time", "error", "control", "position", "target", "detectedLoad", "P", "I", "D"]
 df = pd.DataFrame(data, columns=columns)
 
 # Filter to only show first 10 seconds
@@ -60,8 +60,9 @@ print(f"Data collected: {len(df)} samples")
 FORCE_TO_TARGET = 1.0 / (1.97 * 2)  # 1/(k_spring * num_springs) = 0.253807
 ADC_TO_LOAD = (5.0 / 1023.0) * 29.361  # From main.cpp
 
-# Calculate current load from target position
-current_load = df["target"].mean() / (6.0 * FORCE_TO_TARGET) if len(df) > 0 else 0.0
+
+# Calculate current load from detectedLoad field directly
+current_load = df["detectedLoad"].mean() if len(df) > 0 else 0.0
 print(f"Detected Load: {current_load:.2f} N ({current_load/9.81:.1f} kg)")
 
 # Apply enhanced smoothing for ultra-smooth lines

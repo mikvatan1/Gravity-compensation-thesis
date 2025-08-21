@@ -33,6 +33,7 @@ const unsigned long RESET_DELAY_MS = 2000; // Wait 2 seconds before resetting PI
 static bool skipADC = false;
 static float lastForce = 0.0;
 static float lastATarget = 0.0;
+static float lastDetectedLoad = 0.0;
 static bool firstADCRead = true;
 
 // Force filtering variables
@@ -194,9 +195,10 @@ void loop() {
 
   
   // Read force with ADC optimization and filtering 
-  float force, a_target;  
+  float force, a_target, detectedLoad;  
   if (!skipADC || firstADCRead) { 
     int rawADC = analogRead(LOAD_CELL); 
+    detectedLoad = rawADC * ADC_TO_LOAD; // top load [N]
     float rawForce = (rawADC * ADC_TO_FORCE) + own_force; 
     
     // Apply exponential moving average filter to reduce noise
@@ -211,10 +213,12 @@ void loop() {
     a_target = force * FORCE_TO_TARGET;
     lastForce = force;
     lastATarget = a_target;
+    lastDetectedLoad = detectedLoad;
     firstADCRead = false;
   } else {
     force = lastForce;
     a_target = lastATarget;
+    detectedLoad = lastDetectedLoad;
   }
   skipADC = !skipADC; // Toggle for next loop
 
@@ -306,6 +310,7 @@ void loop() {
     Serial.print(control, 1); Serial.print(",");
     Serial.print(position, 1); Serial.print(",");
     Serial.print(target, 1); Serial.print(",");
+    Serial.print(detectedLoad, 1); Serial.print(",");
     Serial.print(p, 1); Serial.print(",");
     Serial.print(i, 1); Serial.print(",");
     Serial.println(d, 1);
@@ -316,6 +321,7 @@ void loop() {
     Serial.print("Looptime:");
     Serial.print(loopDuration);
     Serial.println(" ms");
+    
     
   }
 
