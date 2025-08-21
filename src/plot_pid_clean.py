@@ -6,7 +6,7 @@ import numpy as np
 
 # Adjust this to match your Arduino COM port
 port = 'COM3'  # Update if needed
-baud = 9600
+baud = 115200
 timeout = 0.1
 
 # How long to collect data (in seconds) - updated to match Arduino's 10s limit
