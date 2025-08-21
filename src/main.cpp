@@ -45,7 +45,7 @@ uint8_t pendingR = 0, pendingG = 0, pendingB = 0; // Pending LED colors
 
 Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
 
-PIDController pid(1.0, 0.7, 0.01); 
+PIDController pid(0.5, 0.2, 0.05); 
 
 // error_a_max = 100mm
 // therefore Kp*e = 100 (as other terms are not aggressive)
@@ -59,9 +59,11 @@ float spoed = 2.0; // [mm] per rotation
 float a_start = 0; // [mm] Manually set start value of a, corresponds to the actual start position of the device
 float a_target = 0; // [mm] Starting value of a
 float angle = 0.0; 
+float own_weight = 2.0; // [kg]
+float own_force = own_weight * 9.81; // [N]
 
-const float ADC_TO_FORCE = (5.0 / 1023.0) * 29.361 * 6; // Combined: voltage conversion * calibration * total force multiplier
-const float ADC_TO_LOAD = (5.0 / 1023.0) * 29.361;
+const float ADC_TO_FORCE = ((5.0 / 1023.0) * 29.361 * 6); // Combined: voltage conversion * calibration * total force multiplier
+const float ADC_TO_LOAD = ((5.0 / 1023.0) * 29.361);
 const float FORCE_TO_TARGET = 1.0 / (k_spring * num_springs); // 1/(1.97*2) = 0.253807
 const float ROTATION_MULTIPLIER = 1.0 / 4096.0; // Pre-calculated 1/4096 
 
@@ -187,11 +189,11 @@ void loop() {
   }
 
   
-  // Read force with ADC optimization and filtering
-  float force, a_target;
-  if (!skipADC || firstADCRead) {
+  // Read force with ADC optimization and filtering 
+  float force, a_target;  
+  if (!skipADC || firstADCRead) { 
     int rawADC = analogRead(LOAD_CELL); 
-    float rawForce = rawADC * ADC_TO_FORCE;
+    float rawForce = (rawADC * ADC_TO_FORCE) + own_force; 
     
     // Apply exponential moving average filter to reduce noise
     if (firstForceRead) {
@@ -287,11 +289,12 @@ void loop() {
     Serial.println(d, 1);
 
     lastPrintTime = millis();
-
+    
     unsigned long loopDuration = lastPrintTime - loopStart;
     Serial.print("Looptime:");
     Serial.print(loopDuration);
     Serial.println(" ms");
+    
   }
 
 }
