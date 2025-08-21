@@ -118,7 +118,7 @@ void setup() {
   
   // Small delay to ensure motor drivers are fully disabled
   delay(100);
-
+  
   Serial.begin(115200);
   Wire.begin();
   as5600.begin(4);
@@ -261,8 +261,8 @@ void loop() {
     }
 
 
-  // Print every 10 milliseconds
-  if (millis() - lastPrintTime > 10) {
+  // Print every 50 milliseconds
+  if (millis() - lastPrintTime > 50) {
     // Handle pending LED updates here (outside critical loop timing)
     if (ledUpdatePending) {
       setMotorStatusLEDs(pendingR, pendingG, pendingB);
@@ -278,6 +278,7 @@ void loop() {
     float position = a_actual;
     float target = a_target;
 
+    // Single print statement - much faster than multiple Serial.print() calls
     Serial.print(timestamp, 1); Serial.print(",");
     Serial.print(error_a, 1); Serial.print(",");
     Serial.print(control, 1); Serial.print(",");
