@@ -25,7 +25,6 @@ int previousPosition = 0;
 long totalRotation = 0;
 float rotationCounter = 0.0;
 
-
 static bool skipADC = false;
 static float lastForce = 0.0;
 static float lastATarget = 0.0;
@@ -45,7 +44,7 @@ uint8_t pendingR = 0, pendingG = 0, pendingB = 0; // Pending LED colors
 
 Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
 
-PIDController pid(0.5, 0.2, 0.05); 
+PIDController pid(1.0, 0.7, 0.05); 
 
 // error_a_max = 100mm
 // therefore Kp*e = 100 (as other terms are not aggressive)
@@ -119,8 +118,8 @@ void setup() {
   
   // Small delay to ensure motor drivers are fully disabled
   delay(100);
-  
-  Serial.begin(9600);
+
+  Serial.begin(115200);
   Wire.begin();
   as5600.begin(4);
   as5600.setDirection(AS5600_CLOCK_WISE);

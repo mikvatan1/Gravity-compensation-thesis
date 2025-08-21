@@ -8,7 +8,7 @@ plt.close('all')
 
 # === USER SETTINGS ===
 port = 'COM3'  # Updated to match your Arduino port
-baudrate = 9600  # Updated to match your Arduino baud rate
+baudrate = 115200  # Updated to match your Arduino baud rate
 max_lines = 2000
 skip_first = 5
 skip_last = 2
