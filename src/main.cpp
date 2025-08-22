@@ -41,6 +41,11 @@ static float filteredForce = 0.0;
 static bool firstForceRead = true;
 const float FORCE_FILTER_ALPHA = 0.05; // Lower = more filtering, 0.1-0.3 is good range
 
+// Position filtering variables
+float filteredRotation = 0.0;
+bool firstPosRead = true;
+const float POS_FILTER_ALPHA = 0.05;
+
 bool running = false;
 bool lastMotorState = false; // Track motor state for LED updates
 int currentMotorDirection = 0; // Track motor direction: 1=R_PWM(CW), -1=L_PWM(CCW), 0=stopped
@@ -189,22 +194,33 @@ void loop() {
   }
 
     
-  // Read position and calculate rotations
-  int currentPosition = as5600.rawAngle();
-  // Invert the angle to match your expected rotation direction
-  currentPosition = 4095 - currentPosition;
-  
-  if (firstReading) {
-    previousPosition = currentPosition;
-    firstReading = false;
+// --- Read position and calculate rotations ---
+int currentPosition = as5600.rawAngle();
+
+// Invert the angle to match your expected rotation direction
+currentPosition = 4095 - currentPosition;
+
+if (firstReading) {
+  previousPosition = currentPosition;
+  firstReading = false;
+} else {
+  int diff = currentPosition - previousPosition;
+  if (diff > 2048) diff -= 4096;
+  else if (diff < -2048) diff += 4096;
+
+  totalRotation += diff;
+  rotationCounter = totalRotation / 4096.0; // raw, unfiltered rotations
+  previousPosition = currentPosition;
+
+  // --- Apply low-pass filter (EMA) on rotation ---
+  if (firstPosRead) {
+    filteredRotation = rotationCounter;
+    firstPosRead = false;
   } else {
-    int diff = currentPosition - previousPosition;
-    if (diff > 2048) diff -= 4096;
-    else if (diff < -2048) diff += 4096;
-    totalRotation += diff;
-    rotationCounter = totalRotation / 4096.0;
-    previousPosition = currentPosition;
+    filteredRotation = (POS_FILTER_ALPHA * rotationCounter) +
+                       ((1.0 - POS_FILTER_ALPHA) * filteredRotation);
   }
+}
 
   
   // Read force with ADC optimization and filtering 
@@ -237,7 +253,7 @@ void loop() {
 
   
 
-  float a_actual = a_start + (rotationCounter * spoed);
+  float a_actual = a_start + (filteredRotation * spoed);
   float error_a = a_target - a_actual;
 
   // If returning to start, override a_target
