@@ -57,7 +57,7 @@ float PIDController::compute(float setpoint, float measured) {
         float rawDerivative = (error - lastError) / dt;  // Raw derivative calculation
         
         // Apply simple low-pass filter to smooth D-term (reduces noise)
-        float alpha = 0.5;  // Filter strength (0.1 = heavy filtering, 0.9 = light filtering)
+        float alpha = 0.2;  // Filter strength (0.1 = heavy filtering, 0.9 = light filtering)
         derivative = alpha * rawDerivative + (1.0 - alpha) * lastDerivative;
         lastDerivative = derivative;
         

@@ -39,7 +39,7 @@ static bool firstADCRead = true;
 // Force filtering variables
 static float filteredForce = 0.0;
 static bool firstForceRead = true;
-const float FORCE_FILTER_ALPHA = 0.1; // Lower = more filtering, 0.1-0.3 is good range
+const float FORCE_FILTER_ALPHA = 0.05; // Lower = more filtering, 0.1-0.3 is good range
 
 bool running = false;
 bool lastMotorState = false; // Track motor state for LED updates
@@ -50,7 +50,7 @@ uint8_t pendingR = 0, pendingG = 0, pendingB = 0; // Pending LED colors
 
 Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
 
-PIDController pid(4.0, 0.7, 0.10); 
+PIDController pid(4.0, 1.8, 0.80); 
 
 // a_max = 150mm a_min 95mm
 // error a_max = 55mm
@@ -64,7 +64,7 @@ AS5600 as5600;
 float k_spring = 1.97; // [N/mm]
 float num_springs = 2; // Number of springs used
 float spoed = 2.0; // [mm] per rotation
-float a_start = 95.0; // [mm] Start value, only set at startup
+float a_start = 80.0; // [mm] Start value, only set at startup
 float a_target = 0; // [mm] Starting value of a
 float angle = 0.0; 
 float own_weight = 2.0; // [kg]
@@ -76,8 +76,11 @@ const float FORCE_TO_TARGET = 1.0 / (k_spring * num_springs); // 1/(1.97*2) = 0.
 const float ROTATION_MULTIPLIER = 1.0 / 4096.0; // Pre-calculated 1/4096 
 
 
+
 unsigned long lastPrintTime = 0;
 unsigned long startMillis = 0;
+bool returnToStart = false; // Flag to trigger return to a_start
+bool finished = false; // Flag to stop the loop after returning
 
 
 
@@ -160,13 +163,20 @@ void loop() {
 
   unsigned long loopStart = millis(); // Changed to millis() for consistency
 
-  // Stop after 10 seconds
-  if (millis() - startMillis > 20000) {
-    Serial.println("END");  // Signal to Python plotter that test is complete
+
+  // After 10 seconds, trigger return to start
+  if (!returnToStart && !finished && (millis() - startMillis > 10000)) {
+    Serial.println("Returning to start position...");
+    returnToStart = true;
+  }
+
+  // If finished, stop everything and halt
+  if (finished) {
     analogWrite(R_PWM, 0);
     analogWrite(L_PWM, 0);
     digitalWrite(R_EN, LOW);
     digitalWrite(L_EN, LOW);
+    Serial.println("END");
     while (true) {
       //stop the loop
     }
@@ -226,12 +236,24 @@ void loop() {
   skipADC = !skipADC; // Toggle for next loop
 
   
+
   float a_actual = a_start + (rotationCounter * spoed);
   float error_a = a_target - a_actual;
 
+  // If returning to start, override a_target
+  if (returnToStart) {
+    error_a = a_start - a_actual;
+    a_target = a_start;
+  }
 
 
-  if (fabs(error_a) > 5) {
+
+  // If returning to start and within 2 mm, finish
+  if (returnToStart && fabs(a_actual - a_start) < 2.0) {
+    finished = true;
+  }
+
+  if (fabs(error_a) > 2) {
     digitalWrite(R_EN, HIGH);
     digitalWrite(L_EN, HIGH);
 
@@ -244,10 +266,10 @@ void loop() {
     float output = pid.compute(a_target, a_actual); // PID calculation 
     int pwm = constrain(abs(output), 100, 200); // Reduced PWM range for smoother operation
 
-    if (error_a > 5) {  
+    if (error_a > 2) {  
       analogWrite(R_PWM, pwm); // R_PWM = clockwise (a_actual goes up)
       analogWrite(L_PWM, 0);
-    } else if (error_a < -5) { 
+    } else if (error_a < -2) { 
       analogWrite(R_PWM, 0);
       analogWrite(L_PWM, pwm); // L_PWM = counter-clockwise (a_actual goes down)
     }
