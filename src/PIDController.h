@@ -8,7 +8,7 @@ public:
     float compute(float setpoint, float measured);
     void setTunings(float kp, float ki, float kd);
 
-    // New: Getters for debugging/plotting
+    // New: Get for plotting
     float getPTerm() const;
     float getITerm() const;
     float getDTerm() const;
@@ -18,10 +18,10 @@ private:
     float Kp, Ki, Kd;
     float integral;
     float lastError;
-    unsigned long lastTime;  // For proper derivative calculation
+    unsigned long lastTime;  // For derivative calculation
     float lastDerivative;    // For derivative filtering
 
-    // New: Store internal components
+    // Store components
     float pTerm;
     float iTerm;
     float dTerm;

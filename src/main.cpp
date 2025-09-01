@@ -5,19 +5,16 @@
 #include "PIDController.h"
 #include <Adafruit_NeoPixel.h>
 
-#define LOAD_CELL A0
-
+#define LOAD_CELL A0 // force sensor pin
 #define R_PWM 5 // D5
 #define L_PWM 3 // D3
 #define R_EN 8 // D8
 #define L_EN 7 // D7
-#define LOAD_CELL A0 // force sensor pin
 #define AS5600_RAW_TO_DEGREES (360.0 / 4096.0)
 
-#define LED_PIN 4           // Data pin for WS2812B (connect to DIN of the strip)
-#define NUM_LEDS 144        // Number of LEDs on the strip (adjust to your strip)
+#define LED_PIN 4           // Data pin for WS2812B 
+#define NUM_LEDS 144        // Number of LEDs on the strip 
 #define LED_BRIGHTNESS 5    // Brightness of the strip
-
 
 // Rotation tracking
 bool firstReading = true;
@@ -48,23 +45,12 @@ const float POS_FILTER_ALPHA = 0.05;
 
 bool running = false;
 bool lastMotorState = false; // Track motor state for LED updates
-int currentMotorDirection = 0; // Track motor direction: 1=R_PWM(CW), -1=L_PWM(CCW), 0=stopped
 bool ledUpdatePending = false; // Flag for pending LED update
 uint8_t pendingR = 0, pendingG = 0, pendingB = 0; // Pending LED colors
 
-
-Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
-
-PIDController pid(4.0, 1.8, 0.80); 
-
-// a_max = 150mm a_min 95mm
-// error a_max = 55mm
-// pwm range: 100-200
-//
-// therefore Kp*e_max should be 200 at start
-// Kp = 3, e_max is 55mm
-
-AS5600 as5600;
+Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800); // LED strip object
+PIDController pid(4.0, 1.8, 0.80); // PID controller object
+AS5600 as5600; // AS5600 angle sensor object
 
 float k_spring = 1.97; // [N/mm]
 float num_springs = 2; // Number of springs used
@@ -72,23 +58,18 @@ float spoed = 2.0; // [mm] per rotation
 float a_start = 80.0; // [mm] Start value, only set at startup
 float a_target = 0; // [mm] Starting value of a
 float angle = 0.0; 
-float own_weight = 2.0; // [kg]
-float own_force = own_weight * 9.81*6; // [N] at intersection
+float own_weight = 2.3; // [kg]
+float own_force = own_weight * 9.81*3; // [N] at intersection
 
-const float ADC_TO_FORCE = ((5.0 / 1023.0) * 29.361 * 6); // Combined: voltage conversion * calibration * total force multiplier
-const float ADC_TO_LOAD = ((5.0 / 1023.0) * 29.361);
-const float FORCE_TO_TARGET = 1.0 / (k_spring * num_springs); // 1/(1.97*2) = 0.253807
-const float ROTATION_MULTIPLIER = 1.0 / 4096.0; // Pre-calculated 1/4096 
-
-
+const float ADC_TO_FORCE = ((5.0 / 1023.0) * 29.361 * 6); // Raw value to force at intersection
+const float ADC_TO_LOAD = ((5.0 / 1023.0) * 29.361); // Raw value to top load
+const float FORCE_TO_TARGET = 1.0 / (k_spring * num_springs); // Pre-calculated
+const float ROTATION_MULTIPLIER = 1.0 / 4096.0; // Pre-calculated
 
 unsigned long lastPrintTime = 0;
 unsigned long startMillis = 0;
 bool returnToStart = false; // Flag to trigger return to a_start
 bool finished = false; // Flag to stop the loop after returning
-
-
-
 
 // Set all LEDs on the strip to the same color
 void setStripColor(uint8_t r, uint8_t g, uint8_t b) {
@@ -117,11 +98,11 @@ void requestMotorStatusLEDs(uint8_t r, uint8_t g, uint8_t b) {
 }
 
 
-//// setup ////
+// ------- Setup --------
 
 
 void setup() {
-  // FIRST PRIORITY: Disable motor driver immediately to prevent startup movement
+
   // Set pins as outputs and immediately disable them
   pinMode(R_EN, OUTPUT);
   pinMode(L_EN, OUTPUT);
@@ -133,14 +114,12 @@ void setup() {
   analogWrite(R_PWM, 0);      // Ensure PWM is 0
   analogWrite(L_PWM, 0);      // Ensure PWM is 0
   
-  // Small delay to ensure motor drivers are fully disabled
   delay(100);
   
   Serial.begin(115200);
   Wire.begin();
   as5600.begin(4);
   as5600.setDirection(AS5600_CLOCK_WISE);
-
 
   // Led strip initialization
   strip.begin();
@@ -155,27 +134,20 @@ void setup() {
 }
 
 
-
-
-
-
-//// Loop ////
-
-
+// ------- Loop --------
 
 
 void loop() {
 
-  unsigned long loopStart = millis(); // Changed to millis() for consistency
+  unsigned long loopStart = millis(); 
 
-
-  // After 10 seconds, trigger return to start
+  // After 10 seconds, return to start
   if (!returnToStart && !finished && (millis() - startMillis > 10000)) {
     Serial.println("Returning to start position...");
     returnToStart = true;
   }
 
-  // If finished, stop everything and halt
+  // If finished, stop everything
   if (finished) {
     analogWrite(R_PWM, 0);
     analogWrite(L_PWM, 0);
@@ -192,14 +164,14 @@ void loop() {
     setMotorStatusLEDs(pendingR, pendingG, pendingB);
     ledUpdatePending = false;
   }
-
     
-// --- Read position and calculate rotations ---
+// Read position 
 int currentPosition = as5600.rawAngle();
 
-// Invert the angle to match your expected rotation direction
+// Invert the angle to match rotation direction
 currentPosition = 4095 - currentPosition;
 
+//Rotation tracker
 if (firstReading) {
   previousPosition = currentPosition;
   firstReading = false;
@@ -212,7 +184,7 @@ if (firstReading) {
   rotationCounter = totalRotation / 4096.0; // raw, unfiltered rotations
   previousPosition = currentPosition;
 
-  // --- Apply low-pass filter (EMA) on rotation ---
+  // Low-pass filter on rotation
   if (firstPosRead) {
     filteredRotation = rotationCounter;
     firstPosRead = false;
@@ -222,23 +194,22 @@ if (firstReading) {
   }
 }
 
-  
   // Read force with ADC optimization and filtering 
   float force, a_target, detectedLoad;  
   if (!skipADC || firstADCRead) { 
     int rawADC = analogRead(LOAD_CELL); 
     detectedLoad = rawADC * ADC_TO_LOAD; // top load [N]
-    float rawForce = (rawADC * ADC_TO_FORCE) + own_force; // (raw load cell value + own weight) * conversion = total force at intersection
-    
-    // Apply exponential moving average filter to reduce noise
+    float rawForce = (rawADC * ADC_TO_FORCE) + own_force; // Total force at intersection
+
+    // Low-pass filter to reduce noise 
     if (firstForceRead) {
-      filteredForce = rawForce; // Initialize with first reading
+      filteredForce = rawForce;
       firstForceRead = false;
     } else {
       filteredForce = (FORCE_FILTER_ALPHA * rawForce) + ((1.0 - FORCE_FILTER_ALPHA) * filteredForce);
     }
     
-    force = filteredForce; // total force at intersection (top load and own weight at intersection)
+    force = filteredForce; // Total force at intersection 
     a_target = force * FORCE_TO_TARGET; // a = F/k
     lastForce = force;
     lastATarget = a_target;
@@ -251,8 +222,6 @@ if (firstReading) {
   }
   skipADC = !skipADC; // Toggle for next loop
 
-  
-
   float a_actual = a_start + (filteredRotation * spoed);
   float error_a = a_target - a_actual;
 
@@ -261,8 +230,6 @@ if (firstReading) {
     error_a = a_start - a_actual;
     a_target = a_start;
   }
-
-
 
   // If returning to start and within 2 mm, finish
   if (returnToStart && fabs(a_actual - a_start) < 2.0) {
@@ -273,14 +240,14 @@ if (firstReading) {
     digitalWrite(R_EN, HIGH);
     digitalWrite(L_EN, HIGH);
 
-    // Update LEDs only on state change - motor turning (RED)
+    // Update LEDs only on state change 
     if (!lastMotorState) {
-      requestMotorStatusLEDs(255, 0, 0); // Request red LEDs (non-blocking)
+      requestMotorStatusLEDs(255, 0, 0); // Red LEDs
       lastMotorState = true;
     }
 
     float output = pid.compute(a_target, a_actual); // PID calculation 
-    int pwm = constrain(abs(output), 100, 200); // Reduced PWM range for smoother operation
+    int pwm = constrain(abs(output), 100, 200); // Constrain PWM range for smoother operation
 
     if (error_a > 2) {  
       analogWrite(R_PWM, pwm); // R_PWM = clockwise (a_actual goes up)
@@ -291,9 +258,8 @@ if (firstReading) {
     }
 
   } else {
-    // System is in deadband (error < 5mm)
-
-    // Update LEDs only on state change - motor stopped (GREEN)
+    // System is in deadband (error < 2mm)
+    // Update LEDs only on state change
     if (lastMotorState) {
       requestMotorStatusLEDs(0, 255, 0); // Request green LEDs (non-blocking)
       lastMotorState = false;
@@ -306,11 +272,11 @@ if (firstReading) {
 
     // Delayed PID reset logic
     if (!inDeadband) {
-      // Just entered deadband - start the timer
+      // Just entered deadband, start the timer
       timeInDeadband = millis();
       inDeadband = true;
     } else {
-      // Check if we've been in deadband long enough
+      // Check time in deadband 
       if (millis() - timeInDeadband > RESET_DELAY_MS) {
         pid.reset(); // Reset after delay
         timeInDeadband = millis(); // Reset timer to prevent repeated resets
@@ -318,20 +284,19 @@ if (firstReading) {
     }
   }
 
-  // Reset deadband tracking if we exit the deadband
+  // Reset deadband tracking if deadband is exited
   if (fabs(error_a) > 5 && inDeadband) {
     inDeadband = false;
   }
 
-  // Print every 100 milliseconds
+  // Print every 100 ms
   if (millis() - lastPrintTime > 100) {
-    // Handle pending LED updates here (outside critical loop timing)
+    // Handle pending LED updates 
     if (ledUpdatePending) {
       setMotorStatusLEDs(pendingR, pendingG, pendingB);
       ledUpdatePending = false;
     }
 
-    
     float timestamp = (millis() - startMillis) / 1000.0;
     float control = pid.getOutput();
     float p = pid.getPTerm();
@@ -340,7 +305,7 @@ if (firstReading) {
     float position = a_actual;
     float target = a_target;
 
-    // Optimized serial output - fewer function calls
+    // Serial output
     Serial.print(timestamp, 1); Serial.print(",");
     Serial.print(error_a, 1); Serial.print(",");
     Serial.print(control, 1); Serial.print(",");
@@ -365,8 +330,7 @@ if (firstReading) {
     Serial.print(loopDuration);
     Serial.println(" ms");
 
-    
-    
+
   }
 
 }
