@@ -194,6 +194,24 @@ if (firstReading) {
   }
 }
 
+  // Manual force selection for step response
+  float manualLoad1_kg = 8.0; // CHANGE THIS: Load for first 5 seconds (kg)
+  float manualLoad2_kg = 5.0; // CHANGE THIS: Load for seconds 5-10 (kg)
+  
+  float currentTime = (millis() - startMillis) / 1000.0; // Time in seconds
+  float manualLoad_kg;
+  
+  if (currentTime < 5.0) {
+    manualLoad_kg = manualLoad1_kg; // First 5 seconds
+  } else {
+    manualLoad_kg = manualLoad2_kg; // Seconds 5-10
+  }
+  
+  float detectedLoad = manualLoad_kg * 9.81; // Convert kg to N
+  float force = (detectedLoad * 6) + own_force; // Total force at intersection (load x 6 + own weight)
+  float a_target = force * FORCE_TO_TARGET; // a = F/k
+  
+  /*
   // Read force with ADC optimization and filtering 
   float force, a_target, detectedLoad;  
   if (!skipADC || firstADCRead) { 
@@ -210,6 +228,8 @@ if (firstReading) {
     }
     
     force = filteredForce; // Total force at intersection 
+
+
     a_target = force * FORCE_TO_TARGET; // a = F/k
     lastForce = force;
     lastATarget = a_target;
@@ -221,6 +241,7 @@ if (firstReading) {
     detectedLoad = lastDetectedLoad;
   }
   skipADC = !skipADC; // Toggle for next loop
+  */
 
   float a_actual = a_start + (filteredRotation * spoed);
   float error_a = a_target - a_actual;
