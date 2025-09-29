@@ -256,11 +256,23 @@ if (firstReading) {
   bool withinRange = (a_actual >= a_min && a_actual <= a_max);
   bool targetWithinRange = (a_target >= a_min && a_target <= a_max);
   
+  // Check if movement is toward the safe zone
+  bool movingTowardSafeZone = false;
+  if (!withinRange) {
+    if (a_actual < a_min && error_a > 0) {
+      movingTowardSafeZone = true; // Below range, error positive = moving up toward range
+    } else if (a_actual > a_max && error_a < 0) {
+      movingTowardSafeZone = true; // Above range, error negative = moving down toward range
+    }
+  }
+  
   // Allow movement if:
-  // 1. Currently within range AND error > 2mm (normal operation)
-  // 2. Currently outside range BUT target is within range (recovery mode)
+  // 1. Within range AND error > 2mm (normal operation)
+  // 2. Outside range BUT target within range (recovery mode)  
+  // 3. Outside range AND moving toward safe zone (emergency recovery)
   bool allowMovement = (withinRange && fabs(error_a) > 2) || 
-                       (!withinRange && targetWithinRange && fabs(error_a) > 2);
+                       (!withinRange && targetWithinRange && fabs(error_a) > 2) ||
+                       (!withinRange && movingTowardSafeZone && fabs(error_a) > 2);
 
   // If returning to start, override a_target
   if (returnToStart) {
