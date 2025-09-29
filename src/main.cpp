@@ -143,8 +143,8 @@ void loop() {
 
   unsigned long loopStart = millis(); 
 
-  // After 1000 seconds, return to start
-  if (!returnToStart && !finished && (millis() - startMillis > 1000000)) { // 1000 seconds
+  // After 100000 seconds, return to start
+  if (!returnToStart && !finished && (millis() - startMillis > 100000000)) { // 100000 seconds (27u)
     Serial.println("Returning to start position...");
     returnToStart = true;
   }
@@ -235,7 +235,6 @@ if (firstReading) {
     
     force = filteredForce; // Total force at intersection 
 
-
     a_target = force * FORCE_TO_TARGET; // a = F/k
     lastForce = force;
     lastATarget = a_target;
@@ -256,23 +255,23 @@ if (firstReading) {
   bool withinRange = (a_actual >= a_min && a_actual <= a_max);
   bool targetWithinRange = (a_target >= a_min && a_target <= a_max);
   
-  // Check if movement is toward the safe zone
-  bool movingTowardSafeZone = false;
-  if (!withinRange) {
-    if (a_actual < a_min && error_a > 0) {
-      movingTowardSafeZone = true; // Below range, error positive = moving up toward range
-    } else if (a_actual > a_max && error_a < 0) {
-      movingTowardSafeZone = true; // Above range, error negative = moving down toward range
+  // Simple logic: Allow movement if error > 2mm UNLESS it would move further out of range
+  bool allowMovement = false;
+  if (fabs(error_a) > 2) {
+    if (withinRange) {
+      // Always allow movement when within safe range
+      allowMovement = true;
+    } else {
+      // Outside range: only allow if moving toward safe zone OR target is within range
+      if (targetWithinRange) {
+        allowMovement = true; // Target is safe, allow movement toward it
+      } else if (a_actual < a_min && error_a > 0) {
+        allowMovement = true; // Below range, moving up
+      } else if (a_actual > a_max && error_a < 0) {
+        allowMovement = true; // Above range, moving down
+      }
     }
   }
-  
-  // Allow movement if:
-  // 1. Within range AND error > 2mm (normal operation)
-  // 2. Outside range BUT target within range (recovery mode)  
-  // 3. Outside range AND moving toward safe zone (emergency recovery)
-  bool allowMovement = (withinRange && fabs(error_a) > 2) || 
-                       (!withinRange && targetWithinRange && fabs(error_a) > 2) ||
-                       (!withinRange && movingTowardSafeZone && fabs(error_a) > 2);
 
   // If returning to start, override a_target
   if (returnToStart) {
