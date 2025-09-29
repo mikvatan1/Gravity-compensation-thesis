@@ -141,8 +141,8 @@ void loop() {
 
   unsigned long loopStart = millis(); 
 
-  // After 10 seconds, return to start
-  if (!returnToStart && !finished && (millis() - startMillis > 10000)) {
+  // After 1000 seconds, return to start
+  if (!returnToStart && !finished && (millis() - startMillis > 1000000)) { // 1000 seconds
     Serial.println("Returning to start position...");
     returnToStart = true;
   }
@@ -194,6 +194,8 @@ if (firstReading) {
   }
 }
 
+
+/*
   // Manual force selection for step response
   float manualLoad1_kg = 8.0; // CHANGE THIS: Load for first 5 seconds (kg)
   float manualLoad2_kg = 5.0; // CHANGE THIS: Load for seconds 5-10 (kg)
@@ -211,7 +213,9 @@ if (firstReading) {
   float force = (detectedLoad * 6) + own_force; // Total force at intersection (load x 6 + own weight)
   float a_target = force * FORCE_TO_TARGET; // a = F/k
   
-  /*
+  */
+
+
   // Read force with ADC optimization and filtering 
   float force, a_target, detectedLoad;  
   if (!skipADC || firstADCRead) { 
@@ -241,7 +245,7 @@ if (firstReading) {
     detectedLoad = lastDetectedLoad;
   }
   skipADC = !skipADC; // Toggle for next loop
-  */
+
 
   float a_actual = a_start + (filteredRotation * spoed);
   float error_a = a_target - a_actual;
