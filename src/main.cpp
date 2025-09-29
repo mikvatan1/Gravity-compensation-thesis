@@ -56,6 +56,8 @@ float k_spring = 1.97; // [N/mm]
 float num_springs = 2; // Number of springs used
 float spoed = 2.0; // [mm] per rotation
 float a_start = 80.0; // [mm] Start value, only set at startup
+float a_min = 80.0; // [mm] Minimum allowed position
+float a_max = 150.0; // [mm] Maximum allowed position
 float a_target = 0; // [mm] Starting value of a
 float angle = 0.0; 
 float own_weight = 2.3; // [kg]
@@ -249,11 +251,22 @@ if (firstReading) {
 
   float a_actual = a_start + (filteredRotation * spoed);
   float error_a = a_target - a_actual;
+  
+  // Check if position is within safe operating range
+  bool withinRange = (a_actual >= a_min && a_actual <= a_max);
+  bool targetWithinRange = (a_target >= a_min && a_target <= a_max);
+  
+  // Allow movement if:
+  // 1. Currently within range AND error > 2mm (normal operation)
+  // 2. Currently outside range BUT target is within range (recovery mode)
+  bool allowMovement = (withinRange && fabs(error_a) > 2) || 
+                       (!withinRange && targetWithinRange && fabs(error_a) > 2);
 
   // If returning to start, override a_target
   if (returnToStart) {
     error_a = a_start - a_actual;
     a_target = a_start;
+    allowMovement = fabs(error_a) > 2; // Always allow return to start
   }
 
   // If returning to start and within 2 mm, finish
@@ -261,7 +274,7 @@ if (firstReading) {
     finished = true;
   }
 
-  if (fabs(error_a) > 2) {
+  if (allowMovement) {
     digitalWrite(R_EN, HIGH);
     digitalWrite(L_EN, HIGH);
 
