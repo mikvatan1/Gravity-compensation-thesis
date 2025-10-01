@@ -232,7 +232,7 @@ if (firstReading) {
     } else {
       filteredForce = (FORCE_FILTER_ALPHA * rawForce) + ((1.0 - FORCE_FILTER_ALPHA) * filteredForce);
     }
-    
+
     force = filteredForce; // Total force at intersection 
 
     a_target = force * FORCE_TO_TARGET; // a = F/k
@@ -273,6 +273,15 @@ if (firstReading) {
     }
   }
 
+  // Debug when motor should run but doesn't
+  if (fabs(error_a) > 2 && !allowMovement) {
+    Serial.print("BLOCKED: a_actual="); Serial.print(a_actual);
+    Serial.print(" a_target="); Serial.print(a_target);
+    Serial.print(" error="); Serial.print(error_a);
+    Serial.print(" withinRange="); Serial.print(withinRange);
+    Serial.print(" targetWithinRange="); Serial.println(targetWithinRange);
+  }
+
   // If returning to start, override a_target
   if (returnToStart) {
     error_a = a_start - a_actual;
@@ -293,10 +302,11 @@ if (firstReading) {
     if (!lastMotorState) {
       requestMotorStatusLEDs(255, 0, 0); // Red LEDs
       lastMotorState = true;
+      Serial.println("MOTOR_START: Motor enabled");
     }
 
     float output = pid.compute(a_target, a_actual); // PID calculation 
-    int pwm = constrain(abs(output), 100, 200); // Constrain PWM range for smoother operation
+    int pwm = constrain(abs(output), 80, 150); // Reduced PWM to prevent current overload
 
     if (error_a > 2) {  
       analogWrite(R_PWM, pwm); // R_PWM = clockwise (a_actual goes up)
@@ -307,11 +317,14 @@ if (firstReading) {
     }
 
   } else {
-    // System is in deadband (error < 2mm)
+    // System is in deadband (error < 2mm) or blocked by safety
     // Update LEDs only on state change
     if (lastMotorState) {
       requestMotorStatusLEDs(0, 255, 0); // Request green LEDs (non-blocking)
       lastMotorState = false;
+      Serial.print("MOTOR_STOP: error="); Serial.print(error_a);
+      Serial.print(" a_actual="); Serial.print(a_actual);
+      Serial.print(" a_target="); Serial.println(a_target);
     }
 
     analogWrite(R_PWM, 0);
