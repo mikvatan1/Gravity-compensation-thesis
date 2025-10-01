@@ -33,6 +33,11 @@ static float lastATarget = 0.0;
 static float lastDetectedLoad = 0.0;
 static bool firstADCRead = true;
 
+// Weight deadband when in position deadband
+static float deadbandWeight_kg = 0.0;
+static bool inPositionDeadband = false;
+const float WEIGHT_DEADBAND_KG = 0.3; // 300g deadband when in position
+
 // Force filtering variables
 static float filteredForce = 0.0;
 static bool firstForceRead = true;
@@ -235,7 +240,23 @@ if (firstReading) {
 
     force = filteredForce; // Total force at intersection 
 
-    a_target = force * FORCE_TO_TARGET; // a = F/k
+    // Weight deadband logic: only update target if significant change when in position deadband
+    float currentWeight_kg = detectedLoad / 9.81; // Convert N to kg
+    bool wasInDeadband = inPositionDeadband;
+    inPositionDeadband = (fabs(lastATarget - (a_start + (filteredRotation * spoed))) <= 2.0);
+    
+    if (!wasInDeadband || !inPositionDeadband) {
+      // Not in deadband or just entering/leaving deadband - always update target
+      a_target = force * FORCE_TO_TARGET;
+      deadbandWeight_kg = currentWeight_kg;
+    } else {
+      // In position deadband - only update if weight change > 0.1kg
+      if (fabs(currentWeight_kg - deadbandWeight_kg) > WEIGHT_DEADBAND_KG) {
+        a_target = force * FORCE_TO_TARGET; // Update target for significant change
+        deadbandWeight_kg = currentWeight_kg; // Update reference weight
+      }
+      // If change < 0.1kg, keep previous a_target
+    }
     lastForce = force;
     lastATarget = a_target;
     lastDetectedLoad = detectedLoad;
@@ -271,15 +292,6 @@ if (firstReading) {
         allowMovement = true; // Above range, moving down
       }
     }
-  }
-
-  // Debug when motor should run but doesn't
-  if (fabs(error_a) > 2 && !allowMovement) {
-    Serial.print("BLOCKED: a_actual="); Serial.print(a_actual);
-    Serial.print(" a_target="); Serial.print(a_target);
-    Serial.print(" error="); Serial.print(error_a);
-    Serial.print(" withinRange="); Serial.print(withinRange);
-    Serial.print(" targetWithinRange="); Serial.println(targetWithinRange);
   }
 
   // If returning to start, override a_target
