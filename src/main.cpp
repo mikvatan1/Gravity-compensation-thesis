@@ -36,7 +36,7 @@ static bool firstADCRead = true;
 // Weight deadband when in position deadband
 static float deadbandWeight_kg = 0.0;
 static bool inPositionDeadband = false;
-const float WEIGHT_DEADBAND_KG = 0.3; // 300g deadband when in position
+const float WEIGHT_DEADBAND_KG = 0.5; // 500g deadband when in position
 
 // Force filtering variables
 static float filteredForce = 0.0;
@@ -318,7 +318,7 @@ if (firstReading) {
     }
 
     float output = pid.compute(a_target, a_actual); // PID calculation 
-    int pwm = constrain(abs(output), 80, 150); // Reduced PWM to prevent current overload
+    int pwm = constrain(abs(output), 120, 150); // Reduced PWM to prevent current overload
 
     if (error_a > 2) {  
       analogWrite(R_PWM, pwm); // R_PWM = clockwise (a_actual goes up)
