@@ -27,6 +27,9 @@ static unsigned long timeInDeadband = 0;
 static bool inDeadband = false;
 const unsigned long RESET_DELAY_MS = 2000; // Wait 2 seconds before resetting PID
 
+// Hysteresis deadband variables
+static bool inHysteresisDeadband = false;
+
 static bool skipADC = false;
 static float lastForce = 0.0;
 static float lastATarget = 0.0;
@@ -36,7 +39,7 @@ static bool firstADCRead = true;
 // Weight deadband when in position deadband
 static float deadbandWeight_kg = 0.0;
 static bool inPositionDeadband = false;
-const float WEIGHT_DEADBAND_KG = 0.5; // 500g deadband when in position
+const float WEIGHT_DEADBAND_KG = 0.5; // 0.5kg deadband in both directions
 
 // Force filtering variables
 static float filteredForce = 0.0;
@@ -46,12 +49,16 @@ const float FORCE_FILTER_ALPHA = 0.05; // Lower = more filtering, 0.1-0.3 is goo
 // Position filtering variables
 float filteredRotation = 0.0;
 bool firstPosRead = true;
-const float POS_FILTER_ALPHA = 0.05;
+const float POS_FILTER_ALPHA = 0.02; // More aggressive filtering to reduce vibration sensitivity
 
 bool running = false;
 bool lastMotorState = false; // Track motor state for LED updates
 bool ledUpdatePending = false; // Flag for pending LED update
 uint8_t pendingR = 0, pendingG = 0, pendingB = 0; // Pending LED colors
+
+// Vibration immunity variables
+unsigned long lastStateChange = 0;
+const unsigned long STATE_CHANGE_DELAY = 100; // 100ms minimum between state changes
 
 Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800); // LED strip object
 PIDController pid(4.0, 1.8, 0.80); // PID controller object
@@ -60,10 +67,10 @@ AS5600 as5600; // AS5600 angle sensor object
 float k_spring = 1.97; // [N/mm]
 float num_springs = 2; // Number of springs used
 float spoed = 2.0; // [mm] per rotation
-float a_start = 80.0; // [mm] Start value, only set at startup
-float a_min = 80.0; // [mm] Minimum allowed position
+float a_start = 85.0; // [mm] Start value, only set at startup
+float a_min = 85.0; // [mm] Minimum allowed position
 float a_max = 150.0; // [mm] Maximum allowed position
-float a_target = 0; // [mm] Starting value of a
+float a_target = 80.0; // [mm] Initialize to start position
 float angle = 0.0; 
 float own_weight = 2.3; // [kg]
 float own_force = own_weight * 9.81*3; // [N] at intersection
@@ -240,32 +247,19 @@ if (firstReading) {
 
     force = filteredForce; // Total force at intersection 
 
-    // Weight deadband logic: only update target if significant change when in position deadband
-    float currentWeight_kg = detectedLoad / 9.81; // Convert N to kg
-    bool wasInDeadband = inPositionDeadband;
-    inPositionDeadband = (fabs(lastATarget - (a_start + (filteredRotation * spoed))) <= 2.0);
-    
-    if (!wasInDeadband || !inPositionDeadband) {
-      // Not in deadband or just entering/leaving deadband - always update target
-      a_target = force * FORCE_TO_TARGET;
-      deadbandWeight_kg = currentWeight_kg;
-    } else {
-      // In position deadband - only update if weight change > 0.1kg
-      if (fabs(currentWeight_kg - deadbandWeight_kg) > WEIGHT_DEADBAND_KG) {
-        a_target = force * FORCE_TO_TARGET; // Update target for significant change
-        deadbandWeight_kg = currentWeight_kg; // Update reference weight
-      }
-      // If change < 0.1kg, keep previous a_target
-    }
+    // Simple target calculation - no weight deadband needed
+    a_target = force * FORCE_TO_TARGET;
     lastForce = force;
-    lastATarget = a_target;
     lastDetectedLoad = detectedLoad;
     firstADCRead = false;
   } else {
     force = lastForce;
-    a_target = lastATarget;
     detectedLoad = lastDetectedLoad;
+    // Don't override a_target here - keep the weight deadband result
   }
+  
+  // Update lastATarget AFTER weight deadband logic
+  lastATarget = a_target;
   skipADC = !skipADC; // Toggle for next loop
 
 
@@ -276,9 +270,22 @@ if (firstReading) {
   bool withinRange = (a_actual >= a_min && a_actual <= a_max);
   bool targetWithinRange = (a_target >= a_min && a_target <= a_max);
   
-  // Simple logic: Allow movement if error > 2mm UNLESS it would move further out of range
+  // Hysteresis deadband logic
+  if (!inHysteresisDeadband) {
+    // Not in deadband - enter when error <= 2mm
+    if (fabs(error_a) <= 2.0) {
+      inHysteresisDeadband = true;
+    }
+  } else {
+    // In deadband - exit when error > 10mm
+    if (fabs(error_a) > 10.0) {
+      inHysteresisDeadband = false;
+    }
+  }
+  
+  // Allow movement based on hysteresis deadband, but respect safety limits
   bool allowMovement = false;
-  if (fabs(error_a) > 2) {
+  if (!inHysteresisDeadband) {
     if (withinRange) {
       // Always allow movement when within safe range
       allowMovement = true;
@@ -310,10 +317,11 @@ if (firstReading) {
     digitalWrite(R_EN, HIGH);
     digitalWrite(L_EN, HIGH);
 
-    // Update LEDs only on state change 
-    if (!lastMotorState) {
+    // Update LEDs only on state change with anti-vibration delay
+    if (!lastMotorState && (millis() - lastStateChange > STATE_CHANGE_DELAY)) {
       requestMotorStatusLEDs(255, 0, 0); // Red LEDs
       lastMotorState = true;
+      lastStateChange = millis();
       Serial.println("MOTOR_START: Motor enabled");
     }
 
@@ -330,10 +338,11 @@ if (firstReading) {
 
   } else {
     // System is in deadband (error < 2mm) or blocked by safety
-    // Update LEDs only on state change
-    if (lastMotorState) {
+    // Update LEDs only on state change with anti-vibration delay
+    if (lastMotorState && (millis() - lastStateChange > STATE_CHANGE_DELAY)) {
       requestMotorStatusLEDs(0, 255, 0); // Request green LEDs (non-blocking)
       lastMotorState = false;
+      lastStateChange = millis();
       Serial.print("MOTOR_STOP: error="); Serial.print(error_a);
       Serial.print(" a_actual="); Serial.print(a_actual);
       Serial.print(" a_target="); Serial.println(a_target);
@@ -394,13 +403,13 @@ if (firstReading) {
     
     unsigned long loopDuration = lastPrintTime - loopStart;
 
-    Serial.print("a_target:");
-    Serial.print(a_target);
-    Serial.print("a_actual:");
-    Serial.print(a_actual);
-    Serial.print("Detected_load:");
-    Serial.print(detectedLoad/9.81);
-    Serial.print("Looptime:");
+    Serial.print("Target: ");
+    Serial.print(a_target, 1);
+    Serial.print(" mm | Actual: ");
+    Serial.print(a_actual, 1);
+    Serial.print(" mm | Load: ");
+    Serial.print(detectedLoad/9.81, 2);
+    Serial.print(" kg | Loop: ");
     Serial.print(loopDuration);
     Serial.println(" ms");
 
