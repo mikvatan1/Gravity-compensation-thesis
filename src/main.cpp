@@ -247,7 +247,7 @@ if (firstReading) {
 
     force = filteredForce; // Total force at intersection 
 
-    // Simple target calculation - no weight deadband needed
+    // Simple target calculation with safety clamping
     a_target = force * FORCE_TO_TARGET;
     lastForce = force;
     lastDetectedLoad = detectedLoad;
@@ -270,15 +270,15 @@ if (firstReading) {
   bool withinRange = (a_actual >= a_min && a_actual <= a_max);
   bool targetWithinRange = (a_target >= a_min && a_target <= a_max);
   
-  // Hysteresis deadband logic
+  // Hysteresis deadband logic with safety override
   if (!inHysteresisDeadband) {
-    // Not in deadband - enter when error <= 2mm
-    if (fabs(error_a) <= 2.0) {
+    // Not in deadband - enter when error <= 2mm AND within safe range
+    if (fabs(error_a) <= 2.0 && withinRange) {
       inHysteresisDeadband = true;
     }
   } else {
-    // In deadband - exit when error > 10mm
-    if (fabs(error_a) > 10.0) {
+    // In deadband - exit when error > 10mm OR outside safe range
+    if (fabs(error_a) > 10.0 || !withinRange) {
       inHysteresisDeadband = false;
     }
   }
@@ -287,17 +287,20 @@ if (firstReading) {
   bool allowMovement = false;
   if (!inHysteresisDeadband) {
     if (withinRange) {
-      // Always allow movement when within safe range
-      allowMovement = true;
-    } else {
-      // Outside range: only allow if moving toward safe zone OR target is within range
-      if (targetWithinRange) {
-        allowMovement = true; // Target is safe, allow movement toward it
-      } else if (a_actual < a_min && error_a > 0) {
-        allowMovement = true; // Below range, moving up
-      } else if (a_actual > a_max && error_a < 0) {
-        allowMovement = true; // Above range, moving down
+      // Within safe range - but check if movement would go outside range
+      if ((a_actual <= a_min && error_a < 0) || (a_actual >= a_max && error_a > 0)) {
+        allowMovement = false; // Block movement that would go outside range
+      } else {
+        allowMovement = true; // Safe movement within range
       }
+    } else {
+      // Outside range: ONLY allow movement toward safety
+      if (a_actual < a_min && error_a > 0) {
+        allowMovement = true; // Below range, only allow moving up
+      } else if (a_actual > a_max && error_a < 0) {
+        allowMovement = true; // Above range, only allow moving down
+      }
+      // Block ALL other movement when outside safe range
     }
   }
 
@@ -326,7 +329,7 @@ if (firstReading) {
     }
 
     float output = pid.compute(a_target, a_actual); // PID calculation 
-    int pwm = constrain(abs(output), 120, 150); // Reduced PWM to prevent current overload
+    int pwm = constrain(abs(output), 130, 200); // Reduced PWM to prevent current overload
 
     if (error_a > 2) {  
       analogWrite(R_PWM, pwm); // R_PWM = clockwise (a_actual goes up)
